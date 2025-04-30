@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useRef } from 'react';
 import Papa from 'papaparse';
 import {
   Chart as ChartJS,
@@ -9,7 +9,7 @@ import {
   Tooltip,
   Legend,
 } from 'chart.js';
-import { Bar } from 'react-chartjs-2';
+import { Bar, getElementAtEvent } from 'react-chartjs-2';
 
 ChartJS.register(
   CategoryScale,
@@ -47,6 +47,7 @@ const processData = (visits) => {
   const pairLandingsByHour = {};
   const uniqueIcaos = new Set();
   const uniqueCallsigns = new Set();
+  const arrivalsFrom = {}; // Added: Store arrivals from source -> destination
 
   // Initialize min/max times with the first valid visit
   let minTime = new Date(validVisits[0].time);
@@ -93,6 +94,13 @@ const processData = (visits) => {
         if (!pairLandingsByHour[pair]) pairLandingsByHour[pair] = Array(24).fill(0);
         pairLandingsByDay[pair][dayOfWeek]++;
         pairLandingsByHour[pair][hourOfDay]++;
+
+        // --- Calculate Arrivals From --- >
+        if (!arrivalsFrom[airportId]) {
+            arrivalsFrom[airportId] = {}; // Initialize destination if not present
+        }
+        arrivalsFrom[airportId][lastAirport] = (arrivalsFrom[airportId][lastAirport] || 0) + 1;
+        // <--------------------------------
       }
     }
     aircraftLastAirport[icao24] = airportId;
@@ -122,6 +130,7 @@ const processData = (visits) => {
     airportLandingsByHour,
     pairLandingsByDay,
     pairLandingsByHour,
+    arrivalsFrom, // Added
     allAirports: Object.keys(airportCounts).sort(),
     allPairs: Object.keys(airportPairs).sort()
   };
@@ -129,7 +138,9 @@ const processData = (visits) => {
 
 // --- Chart Components ---
 
-const BarChart = ({ title, labels, data, label }) => {
+const BarChart = ({ title, labels, data, label, onBarClick }) => {
+  const chartRef = useRef();
+
   // Check if data is valid before rendering
   if (!Array.isArray(data) || data.length === 0 || !labels || labels.length === 0) {
       // Optionally return a placeholder or null
@@ -175,10 +186,17 @@ const BarChart = ({ title, labels, data, label }) => {
                 minRotation: 0
             }
         }
+    },
+    onClick: (event, elements) => {
+        if (!elements.length || !onBarClick) return;
+
+        const { index } = elements[0];
+        const clickedLabel = labels[index];
+        onBarClick(clickedLabel);
     }
   };
   // Add a wrapper div to control size if necessary, especially with maintainAspectRatio: false
-  return <div style={{ position: 'relative', height: '300px', width: '100%' }}><Bar options={options} data={chartData} /></div>;
+  return <div style={{ position: 'relative', height: '300px', width: '100%' }}><Bar ref={chartRef} options={options} data={chartData} /></div>;
 };
 
 
@@ -246,30 +264,57 @@ function App() {
   }, [fileInputRef]); // Add fileInputRef to dependencies
 
 
-  // Memoized data for Airport-filtered charts
-  const airportFilteredLandingsByDay = useMemo(() => {
+  // --- Click Handlers for Charts ---
+  const handleAirportClick = useCallback((airportId) => {
+      if (data && data.allAirports.includes(airportId)) {
+          setSelectedAirport(airportId);
+          setSelectedPair('none'); // Reset pair filter when airport is clicked
+      }
+  }, [data]);
+
+  const handlePairClick = useCallback((pairId) => {
+       if (data && data.allPairs.includes(pairId)) {
+          setSelectedPair(pairId);
+          setSelectedAirport('all'); // Reset airport filter when pair is clicked
+      }
+  }, [data]);
+
+
+  // --- Combined Memoized Data for Time Charts ---
+  const displayLandingsByDay = useMemo(() => {
       if (!data) return [];
-      if (selectedAirport === 'all') return data.landingsByDay;
-      return data.airportLandingsByDay[selectedAirport] || Array(7).fill(0);
-  }, [data, selectedAirport]);
+      if (selectedPair !== 'none' && data.pairLandingsByDay[selectedPair]) {
+          return data.pairLandingsByDay[selectedPair];
+      }
+      if (selectedAirport !== 'all' && data.airportLandingsByDay[selectedAirport]) {
+          return data.airportLandingsByDay[selectedAirport];
+      }
+      return data.landingsByDay || [];
+  }, [data, selectedAirport, selectedPair]);
 
-  const airportFilteredLandingsByHour = useMemo(() => {
+  const displayLandingsByHour = useMemo(() => {
       if (!data) return [];
-       if (selectedAirport === 'all') return data.landingsByHour;
-      return data.airportLandingsByHour[selectedAirport] || Array(24).fill(0);
-  }, [data, selectedAirport]);
+      if (selectedPair !== 'none' && data.pairLandingsByHour[selectedPair]) {
+          return data.pairLandingsByHour[selectedPair];
+      }
+      if (selectedAirport !== 'all' && data.airportLandingsByHour[selectedAirport]) {
+          return data.airportLandingsByHour[selectedAirport];
+      }
+      return data.landingsByHour || [];
+  }, [data, selectedAirport, selectedPair]);
 
-  // Memoized data for Pair-filtered charts
-   const pairFilteredLandingsByDay = useMemo(() => {
-      if (!data || selectedPair === 'none' || !data.pairLandingsByDay[selectedPair]) return [];
-      return data.pairLandingsByDay[selectedPair];
-  }, [data, selectedPair]);
+  // Determine the label for the time chart titles
+  const activeFilterLabel = useMemo(() => {
+      if (selectedPair !== 'none') return `Pair: ${selectedPair}`;
+      if (selectedAirport !== 'all') return `Airport: ${selectedAirport}`;
+      return 'All Airports';
+  }, [selectedAirport, selectedPair]);
 
-  const pairFilteredLandingsByHour = useMemo(() => {
-       if (!data || selectedPair === 'none' || !data.pairLandingsByHour[selectedPair]) return [];
-       return data.pairLandingsByHour[selectedPair];
-  }, [data, selectedPair]);
-
+  // Determine the label for the data points in time charts
+   const timeChartDataLabel = useMemo(() => {
+      if (selectedPair !== 'none') return 'Flights';
+      return 'Landings';
+  }, [selectedPair]);
 
   const dayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   const hourLabels = Array.from({ length: 24 }, (_, i) => `${i.toString().padStart(2, '0')}:00`);
@@ -283,6 +328,17 @@ function App() {
         return 'Invalid Date';
       }
   };
+
+  // --- Memoized Data for Arrivals From Chart ---
+  const arrivalsFromChartData = useMemo(() => {
+      if (!data || selectedAirport === 'all' || !data.arrivalsFrom || !data.arrivalsFrom[selectedAirport]) {
+          return []; // No airport selected or no arrival data
+      }
+      // Convert the arrivals object for the selected airport into a sorted array
+      return Object.entries(data.arrivalsFrom[selectedAirport])
+          .sort(([, countA], [, countB]) => countB - countA) // Sort descending by count
+          .slice(0, 20); // Take top 20 sources
+  }, [data, selectedAirport]);
 
   return (
     <div className="container">
@@ -348,63 +404,55 @@ function App() {
 
 
           <div className="charts-grid">
-            {/* --- Row 1: Overall Activity --- */}
+            {/* --- Row 1: Overall Activity (Clickable) --- */}
             <div className="chart-container">
               <BarChart
-                title="Top 20 Most Active Airports"
+                title="Top 20 Most Active Airports (Click to Filter)"
                 labels={data.sortedAirports.map(([id]) => id)}
                 data={data.sortedAirports.map(([, count]) => count)}
                 label="Total Landings"
+                onBarClick={handleAirportClick}
               />
             </div>
             <div className="chart-container">
               <BarChart
-                title="Top 20 Most Frequent Airport Pairs"
+                title="Top 20 Most Frequent Airport Pairs (Click to Filter)"
                 labels={data.sortedPairs.map(([pair]) => pair)}
                 data={data.sortedPairs.map(([, count]) => count)}
                 label="Total Flights"
+                onBarClick={handlePairClick}
               />
             </div>
 
-            {/* --- Row 2: Activity by Time (Filtered by Airport) --- */}
+            {/* --- Row 2: Activity by Time (Dynamically Filtered) --- */}
             <div className="chart-container">
                <BarChart
-                title={`Landings by Day of Week (${selectedAirport === 'all' ? 'All Airports' : selectedAirport})`}
+                title={`Activity by Day of Week (${activeFilterLabel})`}
                 labels={dayLabels}
-                data={airportFilteredLandingsByDay}
-                label="Landings"
+                data={displayLandingsByDay}
+                label={timeChartDataLabel}
               />
             </div>
             <div className="chart-container">
               <BarChart
-                title={`Landings by Hour of Day (${selectedAirport === 'all' ? 'All Airports' : selectedAirport})`}
+                title={`Activity by Hour of Day (${activeFilterLabel})`}
                 labels={hourLabels}
-                data={airportFilteredLandingsByHour}
-                label="Landings"
+                data={displayLandingsByHour}
+                label={timeChartDataLabel}
               />
             </div>
 
-            {/* --- Row 3: Activity by Time (Filtered by Pair) --- */}
-             {selectedPair !== 'none' && ( // Only show pair charts if a pair is selected
-                <>
-                   <div className="chart-container">
-                      <BarChart
-                         title={`Flights by Day of Week (Pair: ${selectedPair})`}
-                         labels={dayLabels}
-                         data={pairFilteredLandingsByDay}
-                         label="Flights"
-                       />
-                   </div>
-                   <div className="chart-container">
-                      <BarChart
-                         title={`Flights by Hour of Day (Pair: ${selectedPair})`}
-                         labels={hourLabels}
-                         data={pairFilteredLandingsByHour}
-                         label="Flights"
-                       />
-                   </div>
-                </>
-             )}
+            {/* --- Row 3: Arrivals From (Conditional) --- */}
+            {selectedAirport !== 'all' && arrivalsFromChartData.length > 0 && (
+                <div className="chart-container">
+                    <BarChart
+                        title={`Top 20 Sources for Arrivals at ${selectedAirport}`}
+                        labels={arrivalsFromChartData.map(([source]) => source)}
+                        data={arrivalsFromChartData.map(([, count]) => count)}
+                        label="Arrivals"
+                    />
+                </div>
+            )}
           </div>
         </>
       )}
