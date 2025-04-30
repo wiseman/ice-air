@@ -1,20 +1,20 @@
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import Papa from 'papaparse';
+import 'chartjs-adapter-date-fns';        // registers the adapter
+import { enUS } from 'date-fns/locale';
 import {
   Chart as ChartJS,
   CategoryScale,
   LinearScale,
+  TimeScale,            // keep TimeScale
   BarElement,
-  Title,
-  Tooltip,
-  Legend,
   LineElement,
   PointElement,
-  TimeScale
+  Title,
+  Tooltip,
+  Legend
 } from 'chart.js';
 import { Bar, Line, getElementAtEvent } from 'react-chartjs-2';
-import { enUS } from 'date-fns/locale';
-import 'chartjs-adapter-date-fns';
 
 ChartJS.register(
   CategoryScale,
@@ -34,14 +34,14 @@ const processData = (visits) => {
   // Ensure visits are sorted by time first (important for min/max time)
   // Filter out invalid dates *before* sorting and processing
   const validVisits = visits.filter(visit => {
-      const time = visit.time;
-      if (!time) return false;
-      const d = new Date(time);
-      return !isNaN(d.getTime());
+    const time = visit.time;
+    if (!time) return false;
+    const d = new Date(time);
+    return !isNaN(d.getTime());
   }).sort((a, b) => new Date(a.time) - new Date(b.time));
 
   if (validVisits.length === 0) {
-      throw new Error("No valid rows with parseable dates found in CSV.");
+    throw new Error("No valid rows with parseable dates found in CSV.");
   }
 
   const airportCounts = {};
@@ -57,6 +57,8 @@ const processData = (visits) => {
   const uniqueCallsigns = new Set();
   const arrivalsFrom = {}; // Added: Store arrivals from source -> destination
   const dailyActivity = {}; // Added: Store daily stats
+  const airportDailyActivity = {}; // Added: Store airport-specific daily activity
+  const pairDailyActivity = {}; // Added: Store pair-specific daily activity
 
   // Initialize min/max times with the first valid visit
   let minTime = new Date(validVisits[0].time);
@@ -78,7 +80,7 @@ const processData = (visits) => {
     // Add to sets for unique counts
     uniqueIcaos.add(icao24);
     if (callSign) { // Only count if callsign is present
-        uniqueCallsigns.add(callSign.trim()); // Trim whitespace
+      uniqueCallsigns.add(callSign.trim()); // Trim whitespace
     }
 
     // Increment overall counts
@@ -106,7 +108,7 @@ const processData = (visits) => {
 
         // --- Calculate Arrivals From --- >
         if (!arrivalsFrom[airportId]) {
-            arrivalsFrom[airportId] = {}; // Initialize destination if not present
+          arrivalsFrom[airportId] = {}; // Initialize destination if not present
         }
         arrivalsFrom[airportId][lastAirport] = (arrivalsFrom[airportId][lastAirport] || 0) + 1;
         // <--------------------------------
@@ -121,34 +123,66 @@ const processData = (visits) => {
   const dailyTotalLandings = [];
 
   if (minTime && maxTime) {
-      const currentDate = new Date(minTime);
-      currentDate.setUTCHours(0, 0, 0, 0); // Start at the beginning of the min day (UTC)
-      const endDate = new Date(maxTime);
-      endDate.setUTCHours(0, 0, 0, 0); // End at the beginning of the max day (UTC)
+    const currentDate = new Date(minTime);
+    currentDate.setUTCHours(0, 0, 0, 0); // Start at the beginning of the min day (UTC)
+    const endDate = new Date(maxTime);
+    endDate.setUTCHours(0, 0, 0, 0); // End at the beginning of the max day (UTC)
 
-      while (currentDate <= endDate) {
-          const dateString = currentDate.toISOString().split('T')[0]; // YYYY-MM-DD format
-          let dailyUniqueAircraft = new Set();
-          let dailyLandings = 0;
+    while (currentDate <= endDate) {
+      const dateString = currentDate.toISOString().split('T')[0]; // YYYY-MM-DD format
+      let dailyUniqueAircraft = new Set();
+      let dailyLandings = 0;
+      
+      // Initialize daily structures for airports and pairs
+      airportDailyActivity[dateString] = {};
+      pairDailyActivity[dateString] = {};
 
-          // Efficiently find visits for the current day (assumes validVisits is sorted)
-          // This is less efficient than the previous aggregation method, consider optimizing if performance is critical
-          validVisits.forEach(visit => {
-              const visitDate = new Date(visit.time);
-              visitDate.setUTCHours(0, 0, 0, 0);
-              if (visitDate.getTime() === currentDate.getTime()) {
-                  dailyUniqueAircraft.add(visit.icao24);
-                  dailyLandings++;
+      // Efficiently find visits for the current day (assumes validVisits is sorted)
+      // This is less efficient than the previous aggregation method, consider optimizing if performance is critical
+      validVisits.forEach(visit => {
+        const visitDate = new Date(visit.time);
+        visitDate.setUTCHours(0, 0, 0, 0);
+        if (visitDate.getTime() === currentDate.getTime()) {
+          dailyUniqueAircraft.add(visit.icao24);
+          dailyLandings++;
+          
+          // Track per-airport daily activity
+          if (visit.airportId) {
+            if (!airportDailyActivity[dateString][visit.airportId]) {
+              airportDailyActivity[dateString][visit.airportId] = {
+                landings: 0,
+                uniqueAircraft: new Set()
+              };
+            }
+            airportDailyActivity[dateString][visit.airportId].landings++;
+            airportDailyActivity[dateString][visit.airportId].uniqueAircraft.add(visit.icao24);
+            
+            // Track pair activity if this aircraft has a previous airport
+            if (aircraftLastAirport[visit.icao24]) {
+              const lastAirport = aircraftLastAirport[visit.icao24];
+              if (lastAirport !== visit.airportId) {
+                const pair = `${lastAirport}-${visit.airportId}`;
+                if (!pairDailyActivity[dateString][pair]) {
+                  pairDailyActivity[dateString][pair] = {
+                    flights: 0,
+                    uniqueAircraft: new Set()
+                  };
+                }
+                pairDailyActivity[dateString][pair].flights++;
+                pairDailyActivity[dateString][pair].uniqueAircraft.add(visit.icao24);
               }
-          });
+            }
+          }
+        }
+      });
 
-          dailyLabels.push(dateString);
-          dailyUniqueAircraftCounts.push(dailyUniqueAircraft.size);
-          dailyTotalLandings.push(dailyLandings);
+      dailyLabels.push(dateString);
+      dailyUniqueAircraftCounts.push(dailyUniqueAircraft.size);
+      dailyTotalLandings.push(dailyLandings);
 
-          // Move to the next day
-          currentDate.setUTCDate(currentDate.getUTCDate() + 1);
-      }
+      // Move to the next day
+      currentDate.setUTCDate(currentDate.getUTCDate() + 1);
+    }
   }
   // --- End Daily Activity Calculation ---
 
@@ -182,7 +216,10 @@ const processData = (visits) => {
     // Daily Activity Data
     dailyLabels,
     dailyUniqueAircraftCounts,
-    dailyTotalLandings
+    dailyTotalLandings,
+    // Additional Daily Activity Data
+    airportDailyActivity,
+    pairDailyActivity
   };
 };
 
@@ -193,9 +230,9 @@ const BarChart = ({ title, labels, data, label, onBarClick }) => {
 
   // Check if data is valid before rendering
   if (!Array.isArray(data) || data.length === 0 || !labels || labels.length === 0) {
-      // Optionally return a placeholder or null
-      // console.log("BarChart: Invalid data or labels", { title, data, labels });
-      return <div className="chart-placeholder">No data to display for "{title}"</div>;
+    // Optionally return a placeholder or null
+    // console.log("BarChart: Invalid data or labels", { title, data, labels });
+    return <div className="chart-placeholder">No data to display for "{title}"</div>;
   }
 
   const axisColor = 'rgba(200, 200, 200, 0.85)';
@@ -231,41 +268,169 @@ const BarChart = ({ title, labels, data, label, onBarClick }) => {
         font: { family: 'Inter', size: 14 }
       },
     },
-     scales: {
-        y: {
-            beginAtZero: true,
-            grid: {
-              color: gridColor
-            },
-            ticks: {
-                precision: 0, // Ensure y-axis ticks are integers
-                color: axisColor,
-                font: { family: 'IBM Plex Mono' }
-            }
+    scales: {
+      y: {
+        beginAtZero: true,
+        grid: {
+          color: gridColor
         },
-        x: {
-            grid: {
-              display: false
-            },
-            ticks: {
-                autoSkip: true,
-                maxRotation: 45, // Rotate labels slightly if needed
-                minRotation: 0,
-                color: axisColor,
-                font: { family: 'IBM Plex Mono' }
-            }
+        ticks: {
+          precision: 0, // Ensure y-axis ticks are integers
+          color: axisColor,
+          font: { family: 'IBM Plex Mono' }
         }
+      },
+      x: {
+        grid: {
+          display: false
+        },
+        ticks: {
+          autoSkip: true,
+          maxRotation: 45, // Rotate labels slightly if needed
+          minRotation: 0,
+          color: axisColor,
+          font: { family: 'IBM Plex Mono' }
+        }
+      }
     },
     onClick: (event, elements) => {
-        if (!elements.length || !onBarClick) return;
+      if (!elements.length || !onBarClick) return;
 
-        const { index } = elements[0];
-        const clickedLabel = labels[index];
-        onBarClick(clickedLabel);
+      const { index } = elements[0];
+      const clickedLabel = labels[index];
+      onBarClick(clickedLabel);
     }
   };
   // Add a wrapper div to control size if necessary, especially with maintainAspectRatio: false
-  return <div style={{ position: 'relative', height: '300px', width: '100%' }}><Bar ref={chartRef} options={options} data={chartData} /></div>;
+  return <div style={{ position: 'relative', height: '300px', width: '100%' }}><Bar key={`bar-${title}-${labels.join('-')}`} ref={chartRef} options={options} data={chartData} /></div>;
+};
+
+// --- NEW Dual Bar Chart Component ---
+const DualBarChart = ({ title, labels, data1, label1, data2, label2 }) => {
+  const chartRef = useRef(null);
+
+  // Check if data is valid before rendering
+  if (!Array.isArray(data1) || data1.length === 0 || 
+      !Array.isArray(data2) || data2.length === 0 || 
+      !labels || labels.length === 0) {
+      return <div className="chart-placeholder">No data to display for "{title}"</div>;
+  }
+
+  // Format dates for display - convert YYYY-MM-DD to shorter format
+  const formattedLabels = labels.map(dateStr => {
+    try {
+      const date = new Date(dateStr);
+      return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    } catch (e) {
+      return dateStr;
+    }
+  });
+
+  const axisColor = 'rgba(200, 200, 200, 0.85)';
+  const gridColor = 'rgba(255, 255, 255, 0.08)';
+
+  const chartData = {
+    labels: formattedLabels,
+    datasets: [
+      {
+        label: label1 || 'Dataset 1',
+        data: data1,
+        backgroundColor: 'rgba(0, 230, 255, 0.7)', // Teal/Cyan
+        borderColor: 'rgba(0, 230, 255, 1)',
+        borderWidth: 1,
+        order: 1
+      },
+      {
+        label: label2 || 'Dataset 2',
+        data: data2,
+        backgroundColor: 'rgba(255, 159, 64, 0.7)', // Orange
+        borderColor: 'rgba(255, 159, 64, 1)',
+        borderWidth: 1,
+        order: 0
+      },
+    ],
+  };
+
+  const options = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: {
+        position: 'top',
+        labels: {
+          color: axisColor,
+          font: { family: 'IBM Plex Mono', size: 12 }
+        }
+      },
+      title: {
+        display: true,
+        text: title,
+        color: axisColor,
+        font: { family: 'Inter', size: 14 }
+      },
+      tooltip: {
+        backgroundColor: 'rgba(0,0,0,0.8)',
+        titleFont: { family: 'Inter', size: 12 },
+        bodyFont: { family: 'IBM Plex Mono', size: 11 },
+        callbacks: {
+          title: function(tooltipItems) {
+            // Display full date in tooltip
+            if (tooltipItems.length > 0) {
+              const index = tooltipItems[0].dataIndex;
+              const originalDate = labels[index];
+              return originalDate;
+            }
+            return '';
+          }
+        }
+      }
+    },
+    scales: {
+      x: {
+        grid: {
+          display: false
+        },
+        ticks: {
+          color: axisColor,
+          font: { family: 'IBM Plex Mono' },
+          maxRotation: 45,
+          autoSkip: true,
+          maxTicksLimit: 20
+        }
+      },
+      y: {
+        type: 'linear',
+        display: true,
+        position: 'left',
+        beginAtZero: true,
+        grid: {
+          color: gridColor
+        },
+        ticks: {
+          precision: 0,
+          color: axisColor,
+          font: { family: 'IBM Plex Mono' }
+        },
+        title: {
+          display: true,
+          text: 'Count',
+          color: axisColor,
+          font: { family: 'Inter', size: 12 }
+        }
+      }
+    }
+  };
+
+  return (
+    <div style={{ position: 'relative', height: '350px', width: '100%' }}>
+      <Bar
+        ref={chartRef}
+        options={options}
+        data={chartData}
+        key={`dualbar-${title}-${labels.length}`}
+      />
+    </div>
+  );
 };
 
 // --- NEW Time Series Chart Component ---
@@ -274,12 +439,8 @@ const TimeSeriesChart = ({ title, labels, data1, label1, data2, label2 }) => {
 
   // Ensure the chart is properly destroyed when component unmounts or when props change
   useEffect(() => {
-    return () => {
-      if (chartRef.current && chartRef.current.chartInstance) {
-        chartRef.current.chartInstance.destroy();
-      }
-    };
-  }, [title, labels, data1, label1, data2, label2]); // Re-create chart when props change
+    // no explicit destroy; wrapper does it
+  }, [title, labels, data1, data2]);
 
   if (!Array.isArray(labels) || labels.length === 0 || !Array.isArray(data1) || !Array.isArray(data2)) {
     return <div className="chart-placeholder">No time series data to display for "{title}"</div>;
@@ -322,8 +483,8 @@ const TimeSeriesChart = ({ title, labels, data1, label1, data2, label2 }) => {
     responsive: true,
     maintainAspectRatio: false,
     interaction: {
-       mode: 'index', // Show tooltips for all datasets at the same index
-       intersect: false,
+      mode: 'index', // Show tooltips for all datasets at the same index
+      intersect: false,
     },
     plugins: {
       legend: {
@@ -340,66 +501,66 @@ const TimeSeriesChart = ({ title, labels, data1, label1, data2, label2 }) => {
         font: { family: 'Inter', size: 14 }
       },
       tooltip: {
-          backgroundColor: 'rgba(0,0,0,0.8)',
-          titleFont: { family: 'Inter', size: 12 },
-          bodyFont: { family: 'IBM Plex Mono', size: 11 },
+        backgroundColor: 'rgba(0,0,0,0.8)',
+        titleFont: { family: 'Inter', size: 12 },
+        bodyFont: { family: 'IBM Plex Mono', size: 11 },
       }
     },
-     scales: {
-        y: { // Primary y-axis
-            type: 'linear',
-            display: true,
-            position: 'left',
-            beginAtZero: true,
-            grid: {
-              color: gridColor
-            },
-            ticks: {
-                precision: 0,
-                color: axisColor,
-                font: { family: 'IBM Plex Mono' }
-            },
-             title: {
-                display: true,
-                text: 'Count',
-                color: axisColor,
-                font: { family: 'Inter', size: 12 }
-            }
+    scales: {
+      y: { // Primary y-axis
+        type: 'linear',
+        display: true,
+        position: 'left',
+        beginAtZero: true,
+        grid: {
+          color: gridColor
         },
-        x: {
-            type: 'time', // Use time scale
-            time: {
-                unit: 'day', // Display ticks per day
-                 tooltipFormat: 'PPP', // Format for tooltip header (e.g., 'Jan 1, 2024')
-                 displayFormats: {
-                    day: 'MMM d' // Format for x-axis labels (e.g., 'Jan 1')
-                 }
-            },
-            adapters: {
-              date: {
-                locale: enUS
-              }
-            },
-            grid: {
-              display: false
-            },
-            ticks: {
-                color: axisColor,
-                font: { family: 'IBM Plex Mono' },
-                maxRotation: 45,
-                autoSkip: true, // Automatically skip labels to prevent overlap
-                maxTicksLimit: 20 // Limit the number of visible ticks
-            }
+        ticks: {
+          precision: 0,
+          color: axisColor,
+          font: { family: 'IBM Plex Mono' }
+        },
+        title: {
+          display: true,
+          text: 'Count',
+          color: axisColor,
+          font: { family: 'Inter', size: 12 }
         }
+      },
+      x: {
+        type: 'time', // Use time scale
+        time: {
+          unit: 'day', // Display ticks per day
+          tooltipFormat: 'PPP', // Format for tooltip header (e.g., 'Jan 1, 2024')
+          displayFormats: {
+            day: 'MMM d' // Format for x-axis labels (e.g., 'Jan 1')
+          }
+        },
+        adapters: {
+          date: {
+            locale: enUS
+          }
+        },
+        grid: {
+          display: false
+        },
+        ticks: {
+          color: axisColor,
+          font: { family: 'IBM Plex Mono' },
+          maxRotation: 45,
+          autoSkip: true, // Automatically skip labels to prevent overlap
+          maxTicksLimit: 20 // Limit the number of visible ticks
+        }
+      }
     }
   };
 
   return (
     <div style={{ position: 'relative', height: '350px', width: '100%' }}>
-      <Line 
-        ref={chartRef} 
-        options={options} 
-        data={chartData} 
+      <Line
+        ref={chartRef}
+        options={options}
+        data={chartData}
         key={`timeseries-${title}-${labels.length}`} // Force re-render with unique key
       />
     </div>
@@ -431,28 +592,28 @@ function App() {
       skipEmptyLines: true,
       complete: (results) => {
         try {
-            // Basic validation
-            if (!results.data || results.data.length === 0) {
-                 throw new Error("CSV file is empty or invalid.");
-            }
-            const requiredColumns = ['time', 'icao24', 'airportId'];
-            const actualColumns = results.meta.fields.map(field => field.trim()); // Trim whitespace from headers
-             if (!requiredColumns.every(col => actualColumns.includes(col))) {
-                 throw new Error(`CSV must include columns: ${requiredColumns.join(', ')}. Found: ${actualColumns.join(', ')}`);
-            }
-            // Add check for date parsing errors during processing
-             const processed = processData(results.data);
-             // Example check if data processing returned something meaningful
-             if (!processed || !processed.allAirports || processed.allAirports.length === 0) {
-                 throw new Error("Could not process data. Check CSV content and format, especially dates.");
-             }
+          // Basic validation
+          if (!results.data || results.data.length === 0) {
+            throw new Error("CSV file is empty or invalid.");
+          }
+          const requiredColumns = ['time', 'icao24', 'airportId'];
+          const actualColumns = results.meta.fields.map(field => field.trim()); // Trim whitespace from headers
+          if (!requiredColumns.every(col => actualColumns.includes(col))) {
+            throw new Error(`CSV must include columns: ${requiredColumns.join(', ')}. Found: ${actualColumns.join(', ')}`);
+          }
+          // Add check for date parsing errors during processing
+          const processed = processData(results.data);
+          // Example check if data processing returned something meaningful
+          if (!processed || !processed.allAirports || processed.allAirports.length === 0) {
+            throw new Error("Could not process data. Check CSV content and format, especially dates.");
+          }
 
-            setData(processed);
-            setLoading(false);
+          setData(processed);
+          setLoading(false);
         } catch (err) {
-             console.error("Processing Error:", err);
-             setError(`Failed to process data: ${err.message}`);
-             setLoading(false);
+          console.error("Processing Error:", err);
+          setError(`Failed to process data: ${err.message}`);
+          setLoading(false);
         }
       },
       error: (err) => {
@@ -464,7 +625,7 @@ function App() {
 
     // Reset file input value so the same file can be re-uploaded
     if (fileInputRef.current) {
-        fileInputRef.current.value = "";
+      fileInputRef.current.value = "";
     }
 
   }, [fileInputRef]); // Add fileInputRef to dependencies
@@ -472,54 +633,54 @@ function App() {
 
   // --- Click Handlers for Charts ---
   const handleAirportClick = useCallback((airportId) => {
-      if (data && data.allAirports.includes(airportId)) {
-          setSelectedAirport(airportId);
-          setSelectedPair('none'); // Reset pair filter when airport is clicked
-      }
+    if (data && data.allAirports.includes(airportId)) {
+      setSelectedAirport(airportId);
+      setSelectedPair('none'); // Reset pair filter when airport is clicked
+    }
   }, [data]);
 
   const handlePairClick = useCallback((pairId) => {
-       if (data && data.allPairs.includes(pairId)) {
-          setSelectedPair(pairId);
-          setSelectedAirport('all'); // Reset airport filter when pair is clicked
-      }
+    if (data && data.allPairs.includes(pairId)) {
+      setSelectedPair(pairId);
+      setSelectedAirport('all'); // Reset airport filter when pair is clicked
+    }
   }, [data]);
 
 
   // --- Combined Memoized Data for Time Charts ---
   const displayLandingsByDay = useMemo(() => {
-      if (!data) return [];
-      if (selectedPair !== 'none' && data.pairLandingsByDay[selectedPair]) {
-          return data.pairLandingsByDay[selectedPair];
-      }
-      if (selectedAirport !== 'all' && data.airportLandingsByDay[selectedAirport]) {
-          return data.airportLandingsByDay[selectedAirport];
-      }
-      return data.landingsByDay || [];
+    if (!data) return [];
+    if (selectedPair !== 'none' && data.pairLandingsByDay[selectedPair]) {
+      return data.pairLandingsByDay[selectedPair];
+    }
+    if (selectedAirport !== 'all' && data.airportLandingsByDay[selectedAirport]) {
+      return data.airportLandingsByDay[selectedAirport];
+    }
+    return data.landingsByDay || [];
   }, [data, selectedAirport, selectedPair]);
 
   const displayLandingsByHour = useMemo(() => {
-      if (!data) return [];
-      if (selectedPair !== 'none' && data.pairLandingsByHour[selectedPair]) {
-          return data.pairLandingsByHour[selectedPair];
-      }
-      if (selectedAirport !== 'all' && data.airportLandingsByHour[selectedAirport]) {
-          return data.airportLandingsByHour[selectedAirport];
-      }
-      return data.landingsByHour || [];
+    if (!data) return [];
+    if (selectedPair !== 'none' && data.pairLandingsByHour[selectedPair]) {
+      return data.pairLandingsByHour[selectedPair];
+    }
+    if (selectedAirport !== 'all' && data.airportLandingsByHour[selectedAirport]) {
+      return data.airportLandingsByHour[selectedAirport];
+    }
+    return data.landingsByHour || [];
   }, [data, selectedAirport, selectedPair]);
 
   // Determine the label for the time chart titles
   const activeFilterLabel = useMemo(() => {
-      if (selectedPair !== 'none') return `Pair: ${selectedPair}`;
-      if (selectedAirport !== 'all') return `Airport: ${selectedAirport}`;
-      return 'All Airports';
+    if (selectedPair !== 'none') return `Pair: ${selectedPair}`;
+    if (selectedAirport !== 'all') return `Airport: ${selectedAirport}`;
+    return 'All Airports';
   }, [selectedAirport, selectedPair]);
 
   // Determine the label for the data points in time charts
-   const timeChartDataLabel = useMemo(() => {
-      if (selectedPair !== 'none') return 'Flights';
-      return 'Landings';
+  const timeChartDataLabel = useMemo(() => {
+    if (selectedPair !== 'none') return 'Flights';
+    return 'Landings';
   }, [selectedPair]);
 
   const dayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -527,24 +688,74 @@ function App() {
 
   // Helper to format date/time strings
   const formatDateTime = (isoString) => {
-      if (!isoString) return 'N/A';
-      try {
-        return new Date(isoString).toLocaleString();
-      } catch (e) {
-        return 'Invalid Date';
-      }
+    if (!isoString) return 'N/A';
+    try {
+      return new Date(isoString).toLocaleString();
+    } catch (e) {
+      return 'Invalid Date';
+    }
   };
 
   // --- Memoized Data for Arrivals From Chart ---
   const arrivalsFromChartData = useMemo(() => {
-      if (!data || selectedAirport === 'all' || !data.arrivalsFrom || !data.arrivalsFrom[selectedAirport]) {
-          return []; // No airport selected or no arrival data
-      }
-      // Convert the arrivals object for the selected airport into a sorted array
-      return Object.entries(data.arrivalsFrom[selectedAirport])
-          .sort(([, countA], [, countB]) => countB - countA) // Sort descending by count
-          .slice(0, 20); // Take top 20 sources
+    if (!data || selectedAirport === 'all' || !data.arrivalsFrom || !data.arrivalsFrom[selectedAirport]) {
+      return []; // No airport selected or no arrival data
+    }
+    // Convert the arrivals object for the selected airport into a sorted array
+    return Object.entries(data.arrivalsFrom[selectedAirport])
+      .sort(([, countA], [, countB]) => countB - countA) // Sort descending by count
+      .slice(0, 20); // Take top 20 sources
   }, [data, selectedAirport]);
+
+  // NEW: Filtered daily activity data based on selection
+  const filteredDailyActivity = useMemo(() => {
+    if (!data) return { 
+      labels: [], 
+      uniqueAircraftCounts: [], 
+      totalLandings: [] 
+    };
+    
+    // If no filter, use all data
+    if (selectedAirport === 'all' && selectedPair === 'none') {
+      return {
+        labels: data.dailyLabels,
+        uniqueAircraftCounts: data.dailyUniqueAircraftCounts,
+        totalLandings: data.dailyTotalLandings
+      };
+    }
+    
+    // Initialize arrays
+    const labels = [...data.dailyLabels];
+    const uniqueAircraftCounts = Array(labels.length).fill(0);
+    const totalLandings = Array(labels.length).fill(0);
+    
+    // Filter by airport
+    if (selectedAirport !== 'all') {
+      labels.forEach((dateStr, index) => {
+        if (data.airportDailyActivity[dateStr] && 
+            data.airportDailyActivity[dateStr][selectedAirport]) {
+          
+          const airportData = data.airportDailyActivity[dateStr][selectedAirport];
+          uniqueAircraftCounts[index] = airportData.uniqueAircraft.size;
+          totalLandings[index] = airportData.landings;
+        }
+      });
+    }
+    // Filter by pair
+    else if (selectedPair !== 'none') {
+      labels.forEach((dateStr, index) => {
+        if (data.pairDailyActivity[dateStr] && 
+            data.pairDailyActivity[dateStr][selectedPair]) {
+          
+          const pairData = data.pairDailyActivity[dateStr][selectedPair];
+          uniqueAircraftCounts[index] = pairData.uniqueAircraft.size;
+          totalLandings[index] = pairData.flights;
+        }
+      });
+    }
+    
+    return { labels, uniqueAircraftCounts, totalLandings };
+  }, [data, selectedAirport, selectedPair]);
 
   return (
     <div className="container">
@@ -552,11 +763,11 @@ function App() {
 
       <div className="upload-section">
         <input
-            type="file"
-            accept=".csv"
-            onChange={handleFileUpload}
-            ref={fileInputRef} // Attach ref here
-         />
+          type="file"
+          accept=".csv"
+          onChange={handleFileUpload}
+          ref={fileInputRef} // Attach ref here
+        />
         <span>Upload a CSV file (time, icao24, airportId)</span>
       </div>
 
@@ -575,37 +786,37 @@ function App() {
           </div>
 
           <div className="filters-container">
-             {/* Airport Filter */}
-             <div className="filter-section">
-                <label htmlFor="airport-filter">Filter by Airport:</label>
-                <select
-                   id="airport-filter"
-                   value={selectedAirport}
-                   onChange={(e) => setSelectedAirport(e.target.value)}
-                   disabled={!data.allAirports || data.allAirports.length === 0}
-                >
-                  <option value="all">All Airports</option>
-                  {data.allAirports.map(airport => (
-                    <option key={airport} value={airport}>{airport}</option>
-                  ))}
-                </select>
-             </div>
+            {/* Airport Filter */}
+            <div className="filter-section">
+              <label htmlFor="airport-filter">Filter by Airport:</label>
+              <select
+                id="airport-filter"
+                value={selectedAirport}
+                onChange={(e) => setSelectedAirport(e.target.value)}
+                disabled={!data.allAirports || data.allAirports.length === 0}
+              >
+                <option value="all">All Airports</option>
+                {data.allAirports.map(airport => (
+                  <option key={airport} value={airport}>{airport}</option>
+                ))}
+              </select>
+            </div>
 
-             {/* Airport Pair Filter */}
-             <div className="filter-section">
-                <label htmlFor="pair-filter">Filter by Airport Pair:</label>
-                 <select
-                   id="pair-filter"
-                   value={selectedPair}
-                   onChange={(e) => setSelectedPair(e.target.value)}
-                   disabled={!data.allPairs || data.allPairs.length === 0}
-                >
-                   <option value="none">No Pair Selected</option>
-                   {data.allPairs.map(pair => (
-                     <option key={pair} value={pair}>{pair}</option>
-                   ))}
-                </select>
-             </div>
+            {/* Airport Pair Filter */}
+            <div className="filter-section">
+              <label htmlFor="pair-filter">Filter by Airport Pair:</label>
+              <select
+                id="pair-filter"
+                value={selectedPair}
+                onChange={(e) => setSelectedPair(e.target.value)}
+                disabled={!data.allPairs || data.allPairs.length === 0}
+              >
+                <option value="none">No Pair Selected</option>
+                {data.allPairs.map(pair => (
+                  <option key={pair} value={pair}>{pair}</option>
+                ))}
+              </select>
+            </div>
           </div>
 
 
@@ -632,7 +843,7 @@ function App() {
 
             {/* --- Row 2: Activity by Time (Dynamically Filtered) --- */}
             <div className="chart-container">
-               <BarChart
+              <BarChart
                 title={`Activity by Day of Week (${activeFilterLabel})`}
                 labels={dayLabels}
                 data={displayLandingsByDay}
@@ -650,29 +861,29 @@ function App() {
 
             {/* --- Row 3: Arrivals From (Conditional) --- */}
             {selectedAirport !== 'all' && arrivalsFromChartData.length > 0 && (
-                <div className="chart-container">
-                    <BarChart
-                        title={`Top 20 Sources for Arrivals at ${selectedAirport}`}
-                        labels={arrivalsFromChartData.map(([source]) => source)}
-                        data={arrivalsFromChartData.map(([, count]) => count)}
-                        label="Arrivals"
-                    />
-                </div>
+              <div className="chart-container">
+                <BarChart
+                  title={`Top 20 Sources for Arrivals at ${selectedAirport}`}
+                  labels={arrivalsFromChartData.map(([source]) => source)}
+                  data={arrivalsFromChartData.map(([, count]) => count)}
+                  label="Arrivals"
+                />
+              </div>
             )}
 
             {/* --- NEW Row 4: Daily Activity Time Series --- */}
-             {data.dailyLabels && data.dailyLabels.length > 0 && (
-                <div className="chart-container full-width"> {/* Add full-width class if needed */}
-                     <TimeSeriesChart
-                        key={`${data.earliestTime}-${data.latestTime}`}
-                        title="Daily Activity Over Time"
-                        labels={data.dailyLabels}
-                        data1={data.dailyUniqueAircraftCounts}
-                        label1="# Unique Aircraft Active"
-                        data2={data.dailyTotalLandings}
-                        label2="# Total Landings"
-                     />
-                </div>
+            {data.dailyLabels && data.dailyLabels.length > 0 && (
+              <div className="chart-container full-width">
+                <DualBarChart
+                  key={`daily-${activeFilterLabel}`}
+                  title={`Daily Activity Over Time (${activeFilterLabel})`}
+                  labels={filteredDailyActivity.labels}
+                  data1={filteredDailyActivity.uniqueAircraftCounts}
+                  label1="# Unique Aircraft"
+                  data2={filteredDailyActivity.totalLandings}
+                  label2={selectedPair !== 'none' ? '# Flights' : '# Landings'}
+                />
+              </div>
             )}
           </div>
         </>
