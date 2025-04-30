@@ -1,79 +1,197 @@
-body {
-  font-family: sans-serif;
-  margin: 0;
-  padding: 20px;
-  background-color: #f4f4f4;
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=Inter:wght@400;600&display=swap');
+
+:root {
+  --bg: #0d1117;
+  --surface: #151b24;
+  --panel: #1d252f;
+  --accent: #00e6ff;
+  --text-primary: #e4e6eb;
+  --text-muted: #8c939f;
+  --radius: 8px;
+  --shadow: 0 0 12px rgba(0, 0, 0, 0.45);
 }
 
-.container {
-  max-width: 1200px;
-  margin: auto;
-  background: #fff;
+/* --- Base & Typography ------------------------------------------------------ */
+body {
+  font-family: "Inter", "IBM Plex Mono", monospace;
+  background-color: var(--bg);
+  color: var(--text-primary);
+  margin: 0;
   padding: 20px;
-  border-radius: 8px;
-  box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+  -webkit-font-smoothing: antialiased;
 }
 
 h1 {
   text-align: center;
-  color: #333;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+  color: var(--accent);
+  margin-bottom: 30px;
 }
 
+h2 {
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+/* --- Containers ------------------------------------------------------------- */
+.container {
+  max-width: 1200px;
+  margin: auto;
+  background: var(--surface);
+  padding: 30px 40px;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+/* --- Upload Section --------------------------------------------------------- */
 .upload-section {
-  margin-bottom: 20px;
-  text-align: center;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 24px;
 }
 
 .upload-section input[type="file"] {
-    margin-right: 10px;
+  color: var(--text-primary);
+  background: var(--panel);
+  border: 1px solid var(--accent);
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  cursor: pointer;
 }
 
-.upload-section button {
-    padding: 10px 15px;
-    cursor: pointer;
+/* Hide native ugly button on some browsers */
+.upload-section input[type="file"]::-webkit-file-upload-button {
+  visibility: hidden;
+}
+.upload-section input[type="file"]::before {
+  content: "Select CSV";
+  display: inline-block;
+  background: var(--accent);
+  color: #000;
+  padding: 6px 14px;
+  border-radius: var(--radius) 0 0 var(--radius);
+  margin-right: 10px;
 }
 
+.upload-section span {
+  color: var(--text-muted);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.9em;
+}
+
+/* --- Charts Grid ------------------------------------------------------------ */
 .charts-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
-  gap: 20px;
-  margin-top: 20px;
+  grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+  gap: 24px;
+  margin-top: 30px;
 }
 
 .chart-container {
-  background: #fff;
-  padding: 15px;
-  border-radius: 5px;
-  box-shadow: 0 0 5px rgba(0, 0, 0, 0.05);
+  background: var(--panel);
+  padding: 20px 18px;
+  border-radius: var(--radius);
+  box-shadow: 0 0 6px rgba(0, 0, 0, 0.25);
 }
 
 .chart-container h2 {
   text-align: center;
-  font-size: 1.1em;
-  margin-bottom: 15px;
-  color: #555;
+  font-size: 1em;
+  margin-bottom: 18px;
+  color: var(--text-muted);
+}
+
+.chart-placeholder {
+  text-align: center;
+  color: var(--text-muted);
+  padding: 60px 0;
+}
+
+/* --- Filters ---------------------------------------------------------------- */
+.filters-container {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
 }
 
 .filter-section {
-    margin-bottom: 20px;
-    text-align: right;
+  margin-bottom: 16px;
 }
 
 .filter-section label {
-    margin-right: 5px;
+  margin-right: 8px;
+  color: var(--text-muted);
 }
 
 .filter-section select {
-    padding: 5px;
+  background: var(--panel);
+  color: var(--text-primary);
+  border: 1px solid var(--accent);
+  padding: 6px 10px;
+  border-radius: var(--radius);
+  font-family: inherit;
 }
 
-.loading, .error {
-    text-align: center;
-    margin-top: 20px;
-    font-size: 1.2em;
-    color: #777;
+/* --- Messages ---------------------------------------------------------------- */
+.loading,
+.error {
+  text-align: center;
+  margin-top: 24px;
+  font-size: 1.1em;
+}
+
+.loading {
+  color: var(--accent);
 }
 
 .error {
-    color: red;
+  color: #ff5c5c;
+}
+
+/* --- Scrollbars (WebKit) ---------------------------------------------------- */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: var(--panel);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--accent);
+  border-radius: var(--radius);
+}
+
+/* --- Misc ------------------------------------------------------------------- */
+a {
+  color: var(--accent);
+}
+
+canvas {
+  /* Make chart backgrounds transparent since containers are styled */
+  background: transparent !important;
+}
+
+/* --- Summary Stats ---------------------------------------------------------- */
+.summary-stats {
+  background: var(--panel);
+  border: 1px solid var(--accent);
+  padding: 20px 24px;
+  border-radius: var(--radius);
+  margin-bottom: 24px;
+  box-shadow: 0 0 8px rgba(0, 0, 0, 0.35);
+}
+
+.summary-stats p {
+  margin: 6px 0;
+  color: var(--text-primary);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.95em;
+}
+
+.summary-stats strong {
+  color: var(--accent);
 } 

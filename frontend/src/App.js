@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import Papa from 'papaparse';
 import {
   Chart as ChartJS,
@@ -8,8 +8,13 @@ import {
   Title,
   Tooltip,
   Legend,
+  LineElement,
+  PointElement,
+  TimeScale
 } from 'chart.js';
-import { Bar, getElementAtEvent } from 'react-chartjs-2';
+import { Bar, Line, getElementAtEvent } from 'react-chartjs-2';
+import { enUS } from 'date-fns/locale';
+import 'chartjs-adapter-date-fns';
 
 ChartJS.register(
   CategoryScale,
@@ -17,7 +22,10 @@ ChartJS.register(
   BarElement,
   Title,
   Tooltip,
-  Legend
+  Legend,
+  LineElement,
+  PointElement,
+  TimeScale
 );
 
 // --- Data Processing Logic ---
@@ -48,6 +56,7 @@ const processData = (visits) => {
   const uniqueIcaos = new Set();
   const uniqueCallsigns = new Set();
   const arrivalsFrom = {}; // Added: Store arrivals from source -> destination
+  const dailyActivity = {}; // Added: Store daily stats
 
   // Initialize min/max times with the first valid visit
   let minTime = new Date(validVisits[0].time);
@@ -106,6 +115,43 @@ const processData = (visits) => {
     aircraftLastAirport[icao24] = airportId;
   });
 
+  // --- Calculate Daily Activity (Full Range) ---
+  const dailyLabels = [];
+  const dailyUniqueAircraftCounts = [];
+  const dailyTotalLandings = [];
+
+  if (minTime && maxTime) {
+      const currentDate = new Date(minTime);
+      currentDate.setUTCHours(0, 0, 0, 0); // Start at the beginning of the min day (UTC)
+      const endDate = new Date(maxTime);
+      endDate.setUTCHours(0, 0, 0, 0); // End at the beginning of the max day (UTC)
+
+      while (currentDate <= endDate) {
+          const dateString = currentDate.toISOString().split('T')[0]; // YYYY-MM-DD format
+          let dailyUniqueAircraft = new Set();
+          let dailyLandings = 0;
+
+          // Efficiently find visits for the current day (assumes validVisits is sorted)
+          // This is less efficient than the previous aggregation method, consider optimizing if performance is critical
+          validVisits.forEach(visit => {
+              const visitDate = new Date(visit.time);
+              visitDate.setUTCHours(0, 0, 0, 0);
+              if (visitDate.getTime() === currentDate.getTime()) {
+                  dailyUniqueAircraft.add(visit.icao24);
+                  dailyLandings++;
+              }
+          });
+
+          dailyLabels.push(dateString);
+          dailyUniqueAircraftCounts.push(dailyUniqueAircraft.size);
+          dailyTotalLandings.push(dailyLandings);
+
+          // Move to the next day
+          currentDate.setUTCDate(currentDate.getUTCDate() + 1);
+      }
+  }
+  // --- End Daily Activity Calculation ---
+
   const sortedAirports = Object.entries(airportCounts)
     .sort(([, countA], [, countB]) => countB - countA)
     .slice(0, 20);
@@ -132,7 +178,11 @@ const processData = (visits) => {
     pairLandingsByHour,
     arrivalsFrom, // Added
     allAirports: Object.keys(airportCounts).sort(),
-    allPairs: Object.keys(airportPairs).sort()
+    allPairs: Object.keys(airportPairs).sort(),
+    // Daily Activity Data
+    dailyLabels,
+    dailyUniqueAircraftCounts,
+    dailyTotalLandings
   };
 };
 
@@ -148,14 +198,17 @@ const BarChart = ({ title, labels, data, label, onBarClick }) => {
       return <div className="chart-placeholder">No data to display for "{title}"</div>;
   }
 
+  const axisColor = 'rgba(200, 200, 200, 0.85)';
+  const gridColor = 'rgba(255, 255, 255, 0.08)';
+
   const chartData = {
     labels,
     datasets: [
       {
         label: label || 'Count',
         data: data,
-        backgroundColor: 'rgba(53, 162, 235, 0.5)',
-        borderColor: 'rgba(53, 162, 235, 1)',
+        backgroundColor: 'rgba(0, 230, 255, 0.35)',
+        borderColor: 'rgba(0, 230, 255, 1)',
         borderWidth: 1,
       },
     ],
@@ -166,24 +219,40 @@ const BarChart = ({ title, labels, data, label, onBarClick }) => {
     plugins: {
       legend: {
         position: 'top',
+        labels: {
+          color: axisColor,
+          font: { family: 'IBM Plex Mono', size: 12 }
+        }
       },
       title: {
         display: true,
         text: title,
+        color: axisColor,
+        font: { family: 'Inter', size: 14 }
       },
     },
      scales: {
         y: {
             beginAtZero: true,
+            grid: {
+              color: gridColor
+            },
             ticks: {
-                precision: 0 // Ensure y-axis ticks are integers
+                precision: 0, // Ensure y-axis ticks are integers
+                color: axisColor,
+                font: { family: 'IBM Plex Mono' }
             }
         },
         x: {
+            grid: {
+              display: false
+            },
             ticks: {
                 autoSkip: true,
                 maxRotation: 45, // Rotate labels slightly if needed
-                minRotation: 0
+                minRotation: 0,
+                color: axisColor,
+                font: { family: 'IBM Plex Mono' }
             }
         }
     },
@@ -199,6 +268,143 @@ const BarChart = ({ title, labels, data, label, onBarClick }) => {
   return <div style={{ position: 'relative', height: '300px', width: '100%' }}><Bar ref={chartRef} options={options} data={chartData} /></div>;
 };
 
+// --- NEW Time Series Chart Component ---
+const TimeSeriesChart = ({ title, labels, data1, label1, data2, label2 }) => {
+  const chartRef = useRef(null);
+
+  // Ensure the chart is properly destroyed when component unmounts or when props change
+  useEffect(() => {
+    return () => {
+      if (chartRef.current && chartRef.current.chartInstance) {
+        chartRef.current.chartInstance.destroy();
+      }
+    };
+  }, [title, labels, data1, label1, data2, label2]); // Re-create chart when props change
+
+  if (!Array.isArray(labels) || labels.length === 0 || !Array.isArray(data1) || !Array.isArray(data2)) {
+    return <div className="chart-placeholder">No time series data to display for "{title}"</div>;
+  }
+
+  const axisColor = 'rgba(200, 200, 200, 0.85)';
+  const gridColor = 'rgba(255, 255, 255, 0.08)';
+  const color1 = 'rgba(0, 230, 255, 0.7)'; // Teal/Cyan
+  const color2 = 'rgba(255, 159, 64, 0.7)'; // Orange
+
+  const chartData = {
+    labels: labels, // Expecting date strings (YYYY-MM-DD)
+    datasets: [
+      {
+        label: label1 || 'Dataset 1',
+        data: data1,
+        borderColor: color1,
+        backgroundColor: `${color1}60`, // Slightly transparent fill
+        tension: 0.1, // Slight curve
+        pointRadius: 1, // Smaller points
+        pointHoverRadius: 5,
+        fill: false,
+        yAxisID: 'y', // Use the primary y-axis
+      },
+      {
+        label: label2 || 'Dataset 2',
+        data: data2,
+        borderColor: color2,
+        backgroundColor: `${color2}60`,
+        tension: 0.1,
+        pointRadius: 1,
+        pointHoverRadius: 5,
+        fill: false,
+        yAxisID: 'y', // Use the primary y-axis
+      },
+    ],
+  };
+
+  const options = {
+    responsive: true,
+    maintainAspectRatio: false,
+    interaction: {
+       mode: 'index', // Show tooltips for all datasets at the same index
+       intersect: false,
+    },
+    plugins: {
+      legend: {
+        position: 'top',
+        labels: {
+          color: axisColor,
+          font: { family: 'IBM Plex Mono', size: 12 }
+        }
+      },
+      title: {
+        display: true,
+        text: title,
+        color: axisColor,
+        font: { family: 'Inter', size: 14 }
+      },
+      tooltip: {
+          backgroundColor: 'rgba(0,0,0,0.8)',
+          titleFont: { family: 'Inter', size: 12 },
+          bodyFont: { family: 'IBM Plex Mono', size: 11 },
+      }
+    },
+     scales: {
+        y: { // Primary y-axis
+            type: 'linear',
+            display: true,
+            position: 'left',
+            beginAtZero: true,
+            grid: {
+              color: gridColor
+            },
+            ticks: {
+                precision: 0,
+                color: axisColor,
+                font: { family: 'IBM Plex Mono' }
+            },
+             title: {
+                display: true,
+                text: 'Count',
+                color: axisColor,
+                font: { family: 'Inter', size: 12 }
+            }
+        },
+        x: {
+            type: 'time', // Use time scale
+            time: {
+                unit: 'day', // Display ticks per day
+                 tooltipFormat: 'PPP', // Format for tooltip header (e.g., 'Jan 1, 2024')
+                 displayFormats: {
+                    day: 'MMM d' // Format for x-axis labels (e.g., 'Jan 1')
+                 }
+            },
+            adapters: {
+              date: {
+                locale: enUS
+              }
+            },
+            grid: {
+              display: false
+            },
+            ticks: {
+                color: axisColor,
+                font: { family: 'IBM Plex Mono' },
+                maxRotation: 45,
+                autoSkip: true, // Automatically skip labels to prevent overlap
+                maxTicksLimit: 20 // Limit the number of visible ticks
+            }
+        }
+    }
+  };
+
+  return (
+    <div style={{ position: 'relative', height: '350px', width: '100%' }}>
+      <Line 
+        ref={chartRef} 
+        options={options} 
+        data={chartData} 
+        key={`timeseries-${title}-${labels.length}`} // Force re-render with unique key
+      />
+    </div>
+  );
+};
 
 // --- Main App Component ---
 
@@ -360,7 +566,7 @@ function App() {
       {data && (
         <>
           {/* --- Summary Statistics Section --- */}
-          <div className="summary-stats" style={{ marginBottom: '20px', padding: '15px', border: '1px solid #ccc', borderRadius: '5px', backgroundColor: '#f9f9f9' }}>
+          <div className="summary-stats">
             <h2>Summary Statistics</h2>
             <p><strong>Time Range:</strong> {formatDateTime(data.earliestTime)} - {formatDateTime(data.latestTime)}</p>
             <p><strong>Total Landings Processed:</strong> {data.totalLandings.toLocaleString()}</p>
@@ -368,7 +574,7 @@ function App() {
             <p><strong>Unique Callsigns:</strong> {data.uniqueCallsignCount.toLocaleString()}</p>
           </div>
 
-          <div className="filters-container" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px', flexWrap: 'wrap' }}>
+          <div className="filters-container">
              {/* Airport Filter */}
              <div className="filter-section">
                 <label htmlFor="airport-filter">Filter by Airport:</label>
@@ -451,6 +657,21 @@ function App() {
                         data={arrivalsFromChartData.map(([, count]) => count)}
                         label="Arrivals"
                     />
+                </div>
+            )}
+
+            {/* --- NEW Row 4: Daily Activity Time Series --- */}
+             {data.dailyLabels && data.dailyLabels.length > 0 && (
+                <div className="chart-container full-width"> {/* Add full-width class if needed */}
+                     <TimeSeriesChart
+                        key={`${data.earliestTime}-${data.latestTime}`}
+                        title="Daily Activity Over Time"
+                        labels={data.dailyLabels}
+                        data1={data.dailyUniqueAircraftCounts}
+                        label1="# Unique Aircraft Active"
+                        data2={data.dailyTotalLandings}
+                        label2="# Total Landings"
+                     />
                 </div>
             )}
           </div>
