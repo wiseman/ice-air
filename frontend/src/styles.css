@@ -1,0 +1,79 @@
+body {
+  font-family: sans-serif;
+  margin: 0;
+  padding: 20px;
+  background-color: #f4f4f4;
+}
+
+.container {
+  max-width: 1200px;
+  margin: auto;
+  background: #fff;
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+}
+
+h1 {
+  text-align: center;
+  color: #333;
+}
+
+.upload-section {
+  margin-bottom: 20px;
+  text-align: center;
+}
+
+.upload-section input[type="file"] {
+    margin-right: 10px;
+}
+
+.upload-section button {
+    padding: 10px 15px;
+    cursor: pointer;
+}
+
+.charts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+  gap: 20px;
+  margin-top: 20px;
+}
+
+.chart-container {
+  background: #fff;
+  padding: 15px;
+  border-radius: 5px;
+  box-shadow: 0 0 5px rgba(0, 0, 0, 0.05);
+}
+
+.chart-container h2 {
+  text-align: center;
+  font-size: 1.1em;
+  margin-bottom: 15px;
+  color: #555;
+}
+
+.filter-section {
+    margin-bottom: 20px;
+    text-align: right;
+}
+
+.filter-section label {
+    margin-right: 5px;
+}
+
+.filter-section select {
+    padding: 5px;
+}
+
+.loading, .error {
+    text-align: center;
+    margin-top: 20px;
+    font-size: 1.2em;
+    color: #777;
+}
+
+.error {
+    color: red;
+} 
