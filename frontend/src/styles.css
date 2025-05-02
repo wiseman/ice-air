@@ -194,4 +194,205 @@ canvas {
 
 .summary-stats strong {
   color: var(--accent);
+}
+
+/* --- Date Range Picker --------------------------------------------------- */
+.date-filter-section {
+  padding: 16px;
+  margin-bottom: 20px;
+  background: var(--panel);
+  border-radius: var(--radius);
+  border: 1px solid var(--accent);
+}
+
+/* DateRangePicker Components */
+.react-aria-DateRangePicker {
+  color: var(--text-primary);
+  width: 100%;
+  margin-bottom: 10px;
+}
+
+.react-aria-Label {
+  display: block;
+  margin-bottom: 8px;
+  font-weight: 500;
+  color: var(--accent);
+}
+
+.date-picker-group {
+  display: flex;
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid rgba(0, 230, 255, 0.6);
+  border-radius: var(--radius);
+  padding: 4px 8px;
+  width: 100%;
+  max-width: 500px;
+}
+
+.date-input {
+  display: inline-flex;
+  padding: 4px;
+  border-radius: 4px;
+  flex: 1;
+}
+
+.date-input:focus-within {
+  background: rgba(0, 230, 255, 0.1);
+}
+
+.date-segment {
+  padding: 2px;
+  font-family: 'IBM Plex Mono', monospace;
+  text-align: right;
+  color: var(--text-primary);
+}
+
+.date-segment[data-segment='literal'] {
+  padding: 0 2px;
+}
+
+.date-segment[data-type='literal'] {
+  padding: 0 2px;
+}
+
+.date-segment[data-placeholder=true] {
+  color: var(--text-muted);
+}
+
+.date-segment:focus {
+  color: var(--bg);
+  background: var(--accent);
+  outline: none;
+  border-radius: 2px;
+}
+
+/* Calendar dropdown button */
+.calendar-button {
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  padding: 0 6px;
+  font-size: 14px;
+}
+
+.calendar-button:hover {
+  color: white;
+}
+
+/* Popover for calendar */
+.react-aria-Popover {
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  border: 1px solid var(--accent);
+  background: var(--surface);
+  margin-top: 8px;
+  z-index: 100;
+}
+
+/* Dialog within popover */
+.calendar-dialog {
+  padding: 12px;
+  color: var(--text-primary);
+}
+
+/* Calendar styling */
+.react-aria-RangeCalendar {
+  width: 100%;
+  max-width: 350px;
+}
+
+/* Calendar header */
+.calendar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(0, 230, 255, 0.3);
+}
+
+.react-aria-Heading {
+  font-weight: 600;
+  color: var(--accent);
+  text-align: center;
+  flex: 1;
+}
+
+/* Previous/Next buttons */
+.react-aria-Button[slot="previous"],
+.react-aria-Button[slot="next"] {
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  cursor: pointer;
+  padding: 4px 8px;
+  font-size: 14px;
+}
+
+.react-aria-Button[slot="previous"]:hover,
+.react-aria-Button[slot="next"]:hover {
+  color: var(--accent);
+}
+
+/* Calendar grid */
+.calendar-grid {
+  width: 100%;
+}
+
+/* Calendar cells */
+.react-aria-CalendarCell {
+  text-align: center;
+  cursor: pointer;
+  border-radius: 4px;
+  padding: 8px;
+  margin: 2px;
+  color: var(--text-primary);
+}
+
+.react-aria-CalendarCell[data-disabled] {
+  color: var(--text-muted);
+  opacity: 0.6;
+  cursor: default;
+}
+
+.react-aria-CalendarCell[data-selected] {
+  background: rgba(0, 230, 255, 0.2);
+  font-weight: bold;
+}
+
+.react-aria-CalendarCell[data-selection-start],
+.react-aria-CalendarCell[data-selection-end] {
+  background: var(--accent);
+  color: var(--bg);
+}
+
+.react-aria-CalendarCell:hover:not([data-disabled]) {
+  background: rgba(0, 230, 255, 0.1);
+}
+
+.react-aria-CalendarCell[data-focused] {
+  outline: 2px solid var(--accent);
+}
+
+/* Clear range button */
+.clear-range-button {
+  background: none;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  border-radius: var(--radius);
+  padding: 4px 12px;
+  margin-left: 12px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.clear-range-button:hover {
+  background: rgba(0, 230, 255, 0.1);
+}
+
+.clear-range-button:disabled {
+  opacity: 0.5;
+  cursor: default;
 } 

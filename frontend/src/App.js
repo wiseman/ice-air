@@ -649,7 +649,7 @@ function App() {
     setInitialData(null); // Clear previous raw data
     setSelectedAirport('all');
     setSelectedPair('none');
-    setDateRange(null); // Reset date filter
+    setDateRange(null); // Reset date filter temporarily
 
     Papa.parse(file, {
       header: true,
@@ -670,6 +670,15 @@ function App() {
 
           // No need for extensive checks here as processInitialData throws errors
           setInitialData(processed); // Store raw flights and date range
+          
+          // Set date range to cover the entire time span
+          if (processed.earliestTime && processed.latestTime) {
+            setDateRange({
+              start: getCalendarDate(processed.earliestTime),
+              end: getCalendarDate(processed.latestTime)
+            });
+          }
+          
           setLoading(false);
         } catch (err) {
           console.error("Processing Error:", err);
@@ -903,17 +912,15 @@ function App() {
                     maxValue={getCalendarDate(initialData.latestTime)}
                     granularity="day" // Only select dates, not times
                     isDisabled={loading}
-                    // Add some basic styling classes if needed
-                    // className="my-date-range-picker"
                 >
                     <Label>Filter Date Range:</Label>
                     <Group className="date-picker-group">
                         <DateInput slot="start" className="date-input">
-                            {(segment) => <DateSegment segment={segment} className={`date-segment ${segment.isPlaceholder ? 'placeholder' : ''}`} />}
+                            {(segment) => <DateSegment segment={segment} className="date-segment" />}
                         </DateInput>
                         <span aria-hidden="true">–</span>
                         <DateInput slot="end" className="date-input">
-                            {(segment) => <DateSegment segment={segment} className={`date-segment ${segment.isPlaceholder ? 'placeholder' : ''}`} />}
+                            {(segment) => <DateSegment segment={segment} className="date-segment" />}
                         </DateInput>
                         <Button className="calendar-button">▼</Button>
                     </Group>
@@ -926,7 +933,7 @@ function App() {
                                     <Button slot="next">▶</Button>
                                 </header>
                                 <CalendarGrid className="calendar-grid">
-                                    {(date) => <CalendarCell date={date} className="calendar-cell" />}
+                                    {(date) => <CalendarCell date={date} />}
                                 </CalendarGrid>
                             </RangeCalendar>
                         </Dialog>
@@ -934,7 +941,11 @@ function App() {
                 </DateRangePicker>
                 {/* Optional: Add a manual clear button if needed, interacting with setDateRange(null) */}
                 {dateRange && (
-                    <Button onPress={() => setDateRange(null)} className="clear-range-button" isDisabled={loading}>
+                    <Button 
+                        onPress={() => setDateRange(null)} 
+                        className="clear-range-button" 
+                        isDisabled={loading}
+                    >
                         Clear Range
                     </Button>
                 )}
