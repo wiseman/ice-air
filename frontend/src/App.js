@@ -30,46 +30,43 @@ ChartJS.register(
 
 // --- Data Processing Logic ---
 
-const processData = (visits) => {
-  // Ensure visits are sorted by time first (important for min/max time)
-  // Filter out invalid dates *before* sorting and processing
-  const validVisits = visits.filter(visit => {
-    const time = visit.time;
+const processData = (flights) => {
+  // Ensure flights are sorted by time first (important for min/max time)
+  // Filter out invalid timestamps *before* sorting and processing
+  const validFlights = flights.filter(flight => {
+    const time = flight.timestamp;
     if (!time) return false;
     const d = new Date(time);
     return !isNaN(d.getTime());
-  }).sort((a, b) => new Date(a.time) - new Date(b.time));
+  }).sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
 
-  if (validVisits.length === 0) {
-    throw new Error("No valid rows with parseable dates found in CSV.");
+  if (validFlights.length === 0) {
+    throw new Error("No valid rows with parseable timestamps found in CSV.");
   }
 
   const airportCounts = {};
   const airportPairs = {};
   const landingsByDay = Array(7).fill(0);
   const landingsByHour = Array(24).fill(0);
-  const aircraftLastAirport = {};
   const airportLandingsByDay = {};
   const airportLandingsByHour = {};
   const pairLandingsByDay = {};
   const pairLandingsByHour = {};
   const uniqueIcaos = new Set();
   const uniqueCallsigns = new Set();
-  const arrivalsFrom = {}; // Added: Store arrivals from source -> destination
-  const dailyActivity = {}; // Added: Store daily stats
-  const airportDailyActivity = {}; // Added: Store airport-specific daily activity
-  const pairDailyActivity = {}; // Added: Store pair-specific daily activity
+  const arrivalsFrom = {};
+  const airportDailyActivity = {};
+  const pairDailyActivity = {};
 
-  // Initialize min/max times with the first valid visit
-  let minTime = new Date(validVisits[0].time);
-  let maxTime = new Date(validVisits[0].time);
+  // Initialize min/max times with the first valid flight
+  let minTime = new Date(validFlights[0].timestamp);
+  let maxTime = new Date(validFlights[0].timestamp);
 
-  validVisits.forEach(visit => {
-    // Already validated time, icao24 and airportId presence needed for core logic
-    const { time, icao24, airportId, callSign } = visit;
-    if (!icao24 || !airportId) return; // Skip if essential IDs missing, time already checked
+  validFlights.forEach(flight => {
+    const { timestamp, icao, origin, destination, callsign } = flight;
+    if (!icao || !destination) return;
 
-    const landingTime = new Date(time);
+    const landingTime = new Date(timestamp);
     // Update min/max times
     if (landingTime < minTime) minTime = landingTime;
     if (landingTime > maxTime) maxTime = landingTime;
@@ -78,43 +75,38 @@ const processData = (visits) => {
     const hourOfDay = landingTime.getHours();
 
     // Add to sets for unique counts
-    uniqueIcaos.add(icao24);
-    if (callSign) { // Only count if callsign is present
-      uniqueCallsigns.add(callSign.trim()); // Trim whitespace
+    uniqueIcaos.add(icao);
+    if (callsign) {
+      uniqueCallsigns.add(callsign.trim());
     }
 
     // Increment overall counts
-    airportCounts[airportId] = (airportCounts[airportId] || 0) + 1;
+    airportCounts[destination] = (airportCounts[destination] || 0) + 1;
     landingsByDay[dayOfWeek]++;
     landingsByHour[hourOfDay]++;
 
-    // Increment per-airport counts
-    if (!airportLandingsByDay[airportId]) airportLandingsByDay[airportId] = Array(7).fill(0);
-    if (!airportLandingsByHour[airportId]) airportLandingsByHour[airportId] = Array(24).fill(0);
-    airportLandingsByDay[airportId][dayOfWeek]++;
-    airportLandingsByHour[airportId][hourOfDay]++;
+    // Increment per-destination airport counts
+    if (!airportLandingsByDay[destination]) airportLandingsByDay[destination] = Array(7).fill(0);
+    if (!airportLandingsByHour[destination]) airportLandingsByHour[destination] = Array(24).fill(0);
+    airportLandingsByDay[destination][dayOfWeek]++;
+    airportLandingsByHour[destination][hourOfDay]++;
 
-    // Track airport pairs
-    if (aircraftLastAirport[icao24]) {
-      const lastAirport = aircraftLastAirport[icao24];
-      if (lastAirport !== airportId) {
-        const pair = `${lastAirport}-${airportId}`;
-        airportPairs[pair] = (airportPairs[pair] || 0) + 1;
+    // Track airport pairs directly if origin is present
+    if (origin && origin !== destination) {
+      const pair = `${origin}-${destination}`;
+      airportPairs[pair] = (airportPairs[pair] || 0) + 1;
 
-        if (!pairLandingsByDay[pair]) pairLandingsByDay[pair] = Array(7).fill(0);
-        if (!pairLandingsByHour[pair]) pairLandingsByHour[pair] = Array(24).fill(0);
-        pairLandingsByDay[pair][dayOfWeek]++;
-        pairLandingsByHour[pair][hourOfDay]++;
+      if (!pairLandingsByDay[pair]) pairLandingsByDay[pair] = Array(7).fill(0);
+      if (!pairLandingsByHour[pair]) pairLandingsByHour[pair] = Array(24).fill(0);
+      pairLandingsByDay[pair][dayOfWeek]++;
+      pairLandingsByHour[pair][hourOfDay]++;
 
-        // --- Calculate Arrivals From --- >
-        if (!arrivalsFrom[airportId]) {
-          arrivalsFrom[airportId] = {}; // Initialize destination if not present
-        }
-        arrivalsFrom[airportId][lastAirport] = (arrivalsFrom[airportId][lastAirport] || 0) + 1;
-        // <--------------------------------
+      // Calculate Arrivals From
+      if (!arrivalsFrom[destination]) {
+        arrivalsFrom[destination] = {};
       }
+      arrivalsFrom[destination][origin] = (arrivalsFrom[destination][origin] || 0) + 1;
     }
-    aircraftLastAirport[icao24] = airportId;
   });
 
   // --- Calculate Daily Activity (Full Range) ---
@@ -124,12 +116,12 @@ const processData = (visits) => {
 
   if (minTime && maxTime) {
     const currentDate = new Date(minTime);
-    currentDate.setUTCHours(0, 0, 0, 0); // Start at the beginning of the min day (UTC)
+    currentDate.setUTCHours(0, 0, 0, 0);
     const endDate = new Date(maxTime);
-    endDate.setUTCHours(0, 0, 0, 0); // End at the beginning of the max day (UTC)
+    endDate.setUTCHours(0, 0, 0, 0);
 
     while (currentDate <= endDate) {
-      const dateString = currentDate.toISOString().split('T')[0]; // YYYY-MM-DD format
+      const dateString = currentDate.toISOString().split('T')[0];
       let dailyUniqueAircraft = new Set();
       let dailyLandings = 0;
       
@@ -137,40 +129,42 @@ const processData = (visits) => {
       airportDailyActivity[dateString] = {};
       pairDailyActivity[dateString] = {};
 
-      // Efficiently find visits for the current day (assumes validVisits is sorted)
-      // This is less efficient than the previous aggregation method, consider optimizing if performance is critical
-      validVisits.forEach(visit => {
-        const visitDate = new Date(visit.time);
-        visitDate.setUTCHours(0, 0, 0, 0);
-        if (visitDate.getTime() === currentDate.getTime()) {
-          dailyUniqueAircraft.add(visit.icao24);
-          dailyLandings++;
-          
-          // Track per-airport daily activity
-          if (visit.airportId) {
-            if (!airportDailyActivity[dateString][visit.airportId]) {
-              airportDailyActivity[dateString][visit.airportId] = {
+      // Iterate through flights to find ones matching the current date
+      validFlights.forEach(flight => {
+        const flightDate = new Date(flight.timestamp);
+        flightDate.setUTCHours(0, 0, 0, 0);
+
+        if (flightDate.getTime() === currentDate.getTime()) {
+          // Overall daily stats
+          if (flight.icao) dailyUniqueAircraft.add(flight.icao);
+          if (flight.destination) dailyLandings++;
+
+          // Track per-destination daily activity
+          if (flight.destination) {
+            if (!airportDailyActivity[dateString][flight.destination]) {
+              airportDailyActivity[dateString][flight.destination] = {
                 landings: 0,
                 uniqueAircraft: new Set()
               };
             }
-            airportDailyActivity[dateString][visit.airportId].landings++;
-            airportDailyActivity[dateString][visit.airportId].uniqueAircraft.add(visit.icao24);
-            
-            // Track pair activity if this aircraft has a previous airport
-            if (aircraftLastAirport[visit.icao24]) {
-              const lastAirport = aircraftLastAirport[visit.icao24];
-              if (lastAirport !== visit.airportId) {
-                const pair = `${lastAirport}-${visit.airportId}`;
-                if (!pairDailyActivity[dateString][pair]) {
-                  pairDailyActivity[dateString][pair] = {
-                    flights: 0,
-                    uniqueAircraft: new Set()
-                  };
-                }
-                pairDailyActivity[dateString][pair].flights++;
-                pairDailyActivity[dateString][pair].uniqueAircraft.add(visit.icao24);
-              }
+            airportDailyActivity[dateString][flight.destination].landings++;
+            if (flight.icao) {
+              airportDailyActivity[dateString][flight.destination].uniqueAircraft.add(flight.icao);
+            }
+          }
+
+          // Track pair activity if origin and destination exist
+          if (flight.origin && flight.destination && flight.origin !== flight.destination) {
+            const pair = `${flight.origin}-${flight.destination}`;
+            if (!pairDailyActivity[dateString][pair]) {
+              pairDailyActivity[dateString][pair] = {
+                flights: 0,
+                uniqueAircraft: new Set()
+              };
+            }
+            pairDailyActivity[dateString][pair].flights++;
+            if (flight.icao) {
+              pairDailyActivity[dateString][pair].uniqueAircraft.add(flight.icao);
             }
           }
         }
@@ -198,7 +192,7 @@ const processData = (visits) => {
     // Stats
     earliestTime: minTime.toISOString(),
     latestTime: maxTime.toISOString(),
-    totalLandings: validVisits.length,
+    totalFlightsProcessed: validFlights.length,
     uniqueAircraftCount: uniqueIcaos.size,
     uniqueCallsignCount: uniqueCallsigns.size,
     // Chart Data
@@ -210,7 +204,7 @@ const processData = (visits) => {
     airportLandingsByHour,
     pairLandingsByDay,
     pairLandingsByHour,
-    arrivalsFrom, // Added
+    arrivalsFrom,
     allAirports: Object.keys(airportCounts).sort(),
     allPairs: Object.keys(airportPairs).sort(),
     // Daily Activity Data
@@ -596,8 +590,8 @@ function App() {
           if (!results.data || results.data.length === 0) {
             throw new Error("CSV file is empty or invalid.");
           }
-          const requiredColumns = ['time', 'icao24', 'airportId'];
-          const actualColumns = results.meta.fields.map(field => field.trim()); // Trim whitespace from headers
+          const requiredColumns = ['timestamp', 'icao', 'origin', 'destination'];
+          const actualColumns = results.meta.fields.map(field => field ? field.trim() : '');
           if (!requiredColumns.every(col => actualColumns.includes(col))) {
             throw new Error(`CSV must include columns: ${requiredColumns.join(', ')}. Found: ${actualColumns.join(', ')}`);
           }
@@ -605,7 +599,7 @@ function App() {
           const processed = processData(results.data);
           // Example check if data processing returned something meaningful
           if (!processed || !processed.allAirports || processed.allAirports.length === 0) {
-            throw new Error("Could not process data. Check CSV content and format, especially dates.");
+            throw new Error("Could not process data. Check CSV content and format, especially timestamps, origin, and destination columns.");
           }
 
           setData(processed);
@@ -673,8 +667,8 @@ function App() {
   // Determine the label for the time chart titles
   const activeFilterLabel = useMemo(() => {
     if (selectedPair !== 'none') return `Pair: ${selectedPair}`;
-    if (selectedAirport !== 'all') return `Airport: ${selectedAirport}`;
-    return 'All Airports';
+    if (selectedAirport !== 'all') return `Destination: ${selectedAirport}`;
+    return 'All Destinations';
   }, [selectedAirport, selectedPair]);
 
   // Determine the label for the data points in time charts
@@ -690,8 +684,10 @@ function App() {
   const formatDateTime = (isoString) => {
     if (!isoString) return 'N/A';
     try {
-      return new Date(isoString).toLocaleString();
+      const dt = new Date(isoString.endsWith('Z') ? isoString : isoString + 'Z');
+      return dt.toLocaleString();
     } catch (e) {
+      console.warn("Invalid date format:", isoString);
       return 'Invalid Date';
     }
   };
@@ -699,22 +695,22 @@ function App() {
   // --- Memoized Data for Arrivals From Chart ---
   const arrivalsFromChartData = useMemo(() => {
     if (!data || selectedAirport === 'all' || !data.arrivalsFrom || !data.arrivalsFrom[selectedAirport]) {
-      return []; // No airport selected or no arrival data
+      return []; // No destination airport selected or no arrival data
     }
-    // Convert the arrivals object for the selected airport into a sorted array
+    // Convert the arrivals object for the selected destination airport into a sorted array
     return Object.entries(data.arrivalsFrom[selectedAirport])
       .sort(([, countA], [, countB]) => countB - countA) // Sort descending by count
       .slice(0, 20); // Take top 20 sources
   }, [data, selectedAirport]);
 
-  // NEW: Filtered daily activity data based on selection
+  // Filtered daily activity data based on selection
   const filteredDailyActivity = useMemo(() => {
-    if (!data) return { 
-      labels: [], 
-      uniqueAircraftCounts: [], 
-      totalLandings: [] 
+    if (!data || !data.dailyLabels) return {
+      labels: [],
+      uniqueAircraftCounts: [],
+      totalLandings: []
     };
-    
+
     // If no filter, use all data
     if (selectedAirport === 'all' && selectedPair === 'none') {
       return {
@@ -723,18 +719,18 @@ function App() {
         totalLandings: data.dailyTotalLandings
       };
     }
-    
+
     // Initialize arrays
     const labels = [...data.dailyLabels];
     const uniqueAircraftCounts = Array(labels.length).fill(0);
     const totalLandings = Array(labels.length).fill(0);
-    
-    // Filter by airport
+
+    // Filter by destination airport
     if (selectedAirport !== 'all') {
       labels.forEach((dateStr, index) => {
-        if (data.airportDailyActivity[dateStr] && 
+        if (data.airportDailyActivity[dateStr] &&
             data.airportDailyActivity[dateStr][selectedAirport]) {
-          
+
           const airportData = data.airportDailyActivity[dateStr][selectedAirport];
           uniqueAircraftCounts[index] = airportData.uniqueAircraft.size;
           totalLandings[index] = airportData.landings;
@@ -744,22 +740,22 @@ function App() {
     // Filter by pair
     else if (selectedPair !== 'none') {
       labels.forEach((dateStr, index) => {
-        if (data.pairDailyActivity[dateStr] && 
+        if (data.pairDailyActivity[dateStr] &&
             data.pairDailyActivity[dateStr][selectedPair]) {
-          
+
           const pairData = data.pairDailyActivity[dateStr][selectedPair];
           uniqueAircraftCounts[index] = pairData.uniqueAircraft.size;
           totalLandings[index] = pairData.flights;
         }
       });
     }
-    
+
     return { labels, uniqueAircraftCounts, totalLandings };
   }, [data, selectedAirport, selectedPair]);
 
   return (
     <div className="container">
-      <h1>Aircraft Activity Visualizer</h1>
+      <h1>ICE Air Activity Visualizer</h1>
 
       <div className="upload-section">
         <input
@@ -768,7 +764,7 @@ function App() {
           onChange={handleFileUpload}
           ref={fileInputRef} // Attach ref here
         />
-        <span>Upload a CSV file (time, icao24, airportId)</span>
+        <span>Upload a CSV file (timestamp, icao, origin, destination, callsign)</span>
       </div>
 
       {loading && <p className="loading">Loading and processing data...</p>}
@@ -780,22 +776,22 @@ function App() {
           <div className="summary-stats">
             <h2>Summary Statistics</h2>
             <p><strong>Time Range:</strong> {formatDateTime(data.earliestTime)} - {formatDateTime(data.latestTime)}</p>
-            <p><strong>Total Landings Processed:</strong> {data.totalLandings.toLocaleString()}</p>
-            <p><strong>Unique Aircraft (ICAO24):</strong> {data.uniqueAircraftCount.toLocaleString()}</p>
+            <p><strong>Total Flights Processed:</strong> {data.totalFlightsProcessed.toLocaleString()}</p>
+            <p><strong>Unique Aircraft (ICAO):</strong> {data.uniqueAircraftCount.toLocaleString()}</p>
             <p><strong>Unique Callsigns:</strong> {data.uniqueCallsignCount.toLocaleString()}</p>
           </div>
 
           <div className="filters-container">
             {/* Airport Filter */}
             <div className="filter-section">
-              <label htmlFor="airport-filter">Filter by Airport:</label>
+              <label htmlFor="airport-filter">Filter by Destination Airport:</label>
               <select
                 id="airport-filter"
                 value={selectedAirport}
-                onChange={(e) => setSelectedAirport(e.target.value)}
+                onChange={(e) => { setSelectedAirport(e.target.value); setSelectedPair('none'); }}
                 disabled={!data.allAirports || data.allAirports.length === 0}
               >
-                <option value="all">All Airports</option>
+                <option value="all">All Destinations</option>
                 {data.allAirports.map(airport => (
                   <option key={airport} value={airport}>{airport}</option>
                 ))}
@@ -804,11 +800,11 @@ function App() {
 
             {/* Airport Pair Filter */}
             <div className="filter-section">
-              <label htmlFor="pair-filter">Filter by Airport Pair:</label>
+              <label htmlFor="pair-filter">Filter by Airport Pair (Origin-Destination):</label>
               <select
                 id="pair-filter"
                 value={selectedPair}
-                onChange={(e) => setSelectedPair(e.target.value)}
+                onChange={(e) => { setSelectedPair(e.target.value); setSelectedAirport('all'); }}
                 disabled={!data.allPairs || data.allPairs.length === 0}
               >
                 <option value="none">No Pair Selected</option>
@@ -824,7 +820,7 @@ function App() {
             {/* --- Row 1: Overall Activity (Clickable) --- */}
             <div className="chart-container">
               <BarChart
-                title="Top 20 Most Active Airports (Click to Filter)"
+                title="Top 20 Destination Airports (Click to Filter)"
                 labels={data.sortedAirports.map(([id]) => id)}
                 data={data.sortedAirports.map(([, count]) => count)}
                 label="Total Landings"
@@ -833,7 +829,7 @@ function App() {
             </div>
             <div className="chart-container">
               <BarChart
-                title="Top 20 Most Frequent Airport Pairs (Click to Filter)"
+                title="Top 20 Most Frequent Airport Pairs (Origin-Destination, Click to Filter)"
                 labels={data.sortedPairs.map(([pair]) => pair)}
                 data={data.sortedPairs.map(([, count]) => count)}
                 label="Total Flights"
@@ -870,9 +866,14 @@ function App() {
                 />
               </div>
             )}
+            {selectedAirport !== 'all' && arrivalsFromChartData.length === 0 && data.arrivalsFrom && data.arrivalsFrom[selectedAirport] === undefined && (
+              <div className="chart-container chart-placeholder">
+                  No arrival data recorded for {selectedAirport}.
+              </div>
+            )}
 
             {/* --- NEW Row 4: Daily Activity Time Series --- */}
-            {data.dailyLabels && data.dailyLabels.length > 0 && (
+            {filteredDailyActivity.labels && filteredDailyActivity.labels.length > 0 && (
               <div className="chart-container full-width">
                 <DualBarChart
                   key={`daily-${activeFilterLabel}`}
@@ -884,6 +885,11 @@ function App() {
                   label2={selectedPair !== 'none' ? '# Flights' : '# Landings'}
                 />
               </div>
+            )}
+            {(!filteredDailyActivity.labels || filteredDailyActivity.labels.length === 0) && data && (
+                 <div className="chart-container full-width chart-placeholder">
+                    No daily activity data to display for the selected filter or time range.
+                 </div>
             )}
           </div>
         </>
