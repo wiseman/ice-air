@@ -14,7 +14,30 @@ import {
   Tooltip,
   Legend
 } from 'chart.js';
-import { Bar, Line, getElementAtEvent } from 'react-chartjs-2';
+import { Bar, Line } from 'react-chartjs-2';
+import {
+  DateRangePicker,
+  Label,
+  Group,
+  DateInput,
+  DateSegment,
+  Button,
+  Popover,
+  Dialog,
+  RangeCalendar,
+  CalendarCell,
+  CalendarGrid,
+  Heading
+} from 'react-aria-components';
+import {
+  parseDate,
+  parseAbsoluteToLocal, // Or parseZonedDateTime, parseAbsolute depending on timestamp format
+  today,
+  getLocalTimeZone,
+  CalendarDate,
+  toCalendarDate
+} from '@internationalized/date';
+import { I18nProvider } from '@react-aria/i18n';
 
 ChartJS.register(
   CategoryScale,
@@ -30,48 +53,93 @@ ChartJS.register(
 
 // --- Data Processing Logic ---
 
-const processData = (flights) => {
-  // Ensure flights are sorted by time first (important for min/max time)
+// Step 1: Initial Processing (Parse, Validate, Sort, Get Range)
+const processInitialData = (flights) => {
   // Filter out invalid timestamps *before* sorting and processing
   const validFlights = flights.filter(flight => {
-    const time = flight.timestamp;
+    const time = flight.timestamp; // Use timestamp
     if (!time) return false;
-    const d = new Date(time);
-    return !isNaN(d.getTime());
-  }).sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+    try {
+      const d = new Date(time);
+      return !isNaN(d.getTime());
+    } catch (e) {
+      return false; // Handle potential Date constructor errors
+    }
+  }).map(flight => ({ // Convert timestamp to Date object early
+    ...flight,
+    timestamp: new Date(flight.timestamp)
+  })).sort((a, b) => a.timestamp - b.timestamp); // Sort by timestamp (Date objects)
 
   if (validFlights.length === 0) {
     throw new Error("No valid rows with parseable timestamps found in CSV.");
   }
 
-  const airportCounts = {};
+  // Determine min/max time from the sorted valid flights
+  const minTime = validFlights[0].timestamp;
+  const maxTime = validFlights[validFlights.length - 1].timestamp;
+
+  return {
+    rawFlights: validFlights, // Return the raw, sorted, validated flights with Date objects
+    earliestTime: minTime,
+    latestTime: maxTime,
+  };
+};
+
+
+// Step 2: Aggregation Logic (Takes a list of flights, returns aggregated stats/charts)
+const aggregateFlightData = (flights) => {
+  if (!flights || flights.length === 0) {
+    // Return empty/default structure if no flights after filtering
+    return {
+      totalFlightsProcessed: 0,
+      uniqueAircraftCount: 0,
+      uniqueCallsignCount: 0,
+      sortedAirports: [],
+      sortedPairs: [],
+      landingsByDay: Array(7).fill(0),
+      landingsByHour: Array(24).fill(0),
+      airportLandingsByDay: {},
+      airportLandingsByHour: {},
+      pairLandingsByDay: {},
+      pairLandingsByHour: {},
+      arrivalsFrom: {},
+      allAirports: [],
+      allPairs: [],
+      dailyLabels: [],
+      dailyUniqueAircraftCounts: [],
+      dailyTotalLandings: [],
+      airportDailyActivity: {},
+      pairDailyActivity: {}
+    };
+  }
+
+  const airportCounts = {}; // Counts landings at destination airports
   const airportPairs = {};
-  const landingsByDay = Array(7).fill(0);
-  const landingsByHour = Array(24).fill(0);
-  const airportLandingsByDay = {};
-  const airportLandingsByHour = {};
-  const pairLandingsByDay = {};
-  const pairLandingsByHour = {};
+  const landingsByDay = Array(7).fill(0); // Landings at destination by day
+  const landingsByHour = Array(24).fill(0); // Landings at destination by hour
+  const airportLandingsByDay = {}; // Landings at specific destination airport by day
+  const airportLandingsByHour = {}; // Landings at specific destination airport by hour
+  const pairLandingsByDay = {}; // Flights for a specific pair by day
+  const pairLandingsByHour = {}; // Flights for a specific pair by hour
   const uniqueIcaos = new Set();
   const uniqueCallsigns = new Set();
-  const arrivalsFrom = {};
-  const airportDailyActivity = {};
-  const pairDailyActivity = {};
+  const arrivalsFrom = {}; // Stores arrivals count: arrivalsFrom[destination][origin] = count
+  const airportDailyActivity = {}; // Stores airport-specific daily activity
+  const pairDailyActivity = {}; // Stores pair-specific daily activity
 
-  // Initialize min/max times with the first valid flight
-  let minTime = new Date(validFlights[0].timestamp);
-  let maxTime = new Date(validFlights[0].timestamp);
+  // Min/max times for the *filtered* set (if needed for display, otherwise use overall min/max)
+  let minTime = flights[0].timestamp;
+  let maxTime = flights[flights.length - 1].timestamp; // Already sorted
 
-  validFlights.forEach(flight => {
+  flights.forEach(flight => {
+    // Destructure using new column names. Ensure origin/destination are present for pair logic.
+    // Timestamp is already a Date object here
     const { timestamp, icao, origin, destination, callsign } = flight;
-    if (!icao || !destination) return;
+    if (!icao || !destination) return; // Skip if essential info missing for destination stats
 
-    const landingTime = new Date(timestamp);
-    // Update min/max times
-    if (landingTime < minTime) minTime = landingTime;
-    if (landingTime > maxTime) maxTime = landingTime;
+    const landingTime = timestamp; // Already a Date object
 
-    const dayOfWeek = landingTime.getDay();
+    const dayOfWeek = landingTime.getDay(); // 0=Sun, 6=Sat
     const hourOfDay = landingTime.getHours();
 
     // Add to sets for unique counts
@@ -80,7 +148,7 @@ const processData = (flights) => {
       uniqueCallsigns.add(callsign.trim());
     }
 
-    // Increment overall counts
+    // Increment overall counts based on destination
     airportCounts[destination] = (airportCounts[destination] || 0) + 1;
     landingsByDay[dayOfWeek]++;
     landingsByHour[hourOfDay]++;
@@ -109,93 +177,93 @@ const processData = (flights) => {
     }
   });
 
-  // --- Calculate Daily Activity (Full Range) ---
+  // --- Calculate Daily Activity (based on the filtered flight list) ---
   const dailyLabels = [];
   const dailyUniqueAircraftCounts = [];
   const dailyTotalLandings = [];
 
-  if (minTime && maxTime) {
-    const currentDate = new Date(minTime);
-    currentDate.setUTCHours(0, 0, 0, 0);
-    const endDate = new Date(maxTime);
-    endDate.setUTCHours(0, 0, 0, 0);
+  if (flights.length > 0) {
+      // Use the actual min/max time of the *filtered* data for iteration
+      const startLoopDate = new Date(minTime);
+      startLoopDate.setUTCHours(0, 0, 0, 0);
+      const endLoopDate = new Date(maxTime);
+      endLoopDate.setUTCHours(0, 0, 0, 0);
 
-    while (currentDate <= endDate) {
-      const dateString = currentDate.toISOString().split('T')[0];
-      let dailyUniqueAircraft = new Set();
-      let dailyLandings = 0;
-      
-      // Initialize daily structures for airports and pairs
-      airportDailyActivity[dateString] = {};
-      pairDailyActivity[dateString] = {};
-
-      // Iterate through flights to find ones matching the current date
-      validFlights.forEach(flight => {
-        const flightDate = new Date(flight.timestamp);
-        flightDate.setUTCHours(0, 0, 0, 0);
-
-        if (flightDate.getTime() === currentDate.getTime()) {
-          // Overall daily stats
-          if (flight.icao) dailyUniqueAircraft.add(flight.icao);
-          if (flight.destination) dailyLandings++;
-
-          // Track per-destination daily activity
-          if (flight.destination) {
-            if (!airportDailyActivity[dateString][flight.destination]) {
-              airportDailyActivity[dateString][flight.destination] = {
-                landings: 0,
-                uniqueAircraft: new Set()
-              };
-            }
-            airportDailyActivity[dateString][flight.destination].landings++;
-            if (flight.icao) {
-              airportDailyActivity[dateString][flight.destination].uniqueAircraft.add(flight.icao);
-            }
+      // Create a map for quick lookup of flights by date string
+      const flightsByDate = {};
+      flights.forEach(flight => {
+          const dateStr = flight.timestamp.toISOString().split('T')[0];
+          if (!flightsByDate[dateStr]) {
+              flightsByDate[dateStr] = [];
           }
-
-          // Track pair activity if origin and destination exist
-          if (flight.origin && flight.destination && flight.origin !== flight.destination) {
-            const pair = `${flight.origin}-${flight.destination}`;
-            if (!pairDailyActivity[dateString][pair]) {
-              pairDailyActivity[dateString][pair] = {
-                flights: 0,
-                uniqueAircraft: new Set()
-              };
-            }
-            pairDailyActivity[dateString][pair].flights++;
-            if (flight.icao) {
-              pairDailyActivity[dateString][pair].uniqueAircraft.add(flight.icao);
-            }
-          }
-        }
+          flightsByDate[dateStr].push(flight);
       });
 
-      dailyLabels.push(dateString);
-      dailyUniqueAircraftCounts.push(dailyUniqueAircraft.size);
-      dailyTotalLandings.push(dailyLandings);
 
-      // Move to the next day
-      currentDate.setUTCDate(currentDate.getUTCDate() + 1);
-    }
+      let currentDate = new Date(startLoopDate);
+      while (currentDate <= endLoopDate) {
+          const dateString = currentDate.toISOString().split('T')[0]; // YYYY-MM-DD format
+          let dailyUniqueAircraft = new Set();
+          let dailyLandings = 0;
+
+          airportDailyActivity[dateString] = {};
+          pairDailyActivity[dateString] = {};
+
+          // Use the pre-grouped flights for this date
+          const todaysFlights = flightsByDate[dateString] || [];
+
+          todaysFlights.forEach(flight => {
+              if (flight.icao) dailyUniqueAircraft.add(flight.icao);
+              if (flight.destination) dailyLandings++;
+
+              // Track per-destination daily activity
+              if (flight.destination) {
+                  if (!airportDailyActivity[dateString][flight.destination]) {
+                      airportDailyActivity[dateString][flight.destination] = { landings: 0, uniqueAircraft: new Set() };
+                  }
+                  airportDailyActivity[dateString][flight.destination].landings++;
+                  if (flight.icao) airportDailyActivity[dateString][flight.destination].uniqueAircraft.add(flight.icao);
+              }
+
+              // Track pair activity
+              if (flight.origin && flight.destination && flight.origin !== flight.destination) {
+                  const pair = `${flight.origin}-${flight.destination}`;
+                  if (!pairDailyActivity[dateString][pair]) {
+                      pairDailyActivity[dateString][pair] = { flights: 0, uniqueAircraft: new Set() };
+                  }
+                  pairDailyActivity[dateString][pair].flights++;
+                  if (flight.icao) pairDailyActivity[dateString][pair].uniqueAircraft.add(flight.icao);
+              }
+          });
+
+
+          // Only add the day if there was activity (optional, keeps charts cleaner if gaps)
+          // Or always add it to show gaps:
+          dailyLabels.push(dateString);
+          dailyUniqueAircraftCounts.push(dailyUniqueAircraft.size);
+          dailyTotalLandings.push(dailyLandings);
+
+          // Move to the next day
+          currentDate.setUTCDate(currentDate.getUTCDate() + 1);
+      }
   }
   // --- End Daily Activity Calculation ---
 
-  const sortedAirports = Object.entries(airportCounts)
+  const sortedAirports = Object.entries(airportCounts) // Based on destination landings
     .sort(([, countA], [, countB]) => countB - countA)
     .slice(0, 20);
 
-  const sortedPairs = Object.entries(airportPairs)
+  const sortedPairs = Object.entries(airportPairs) // Based on origin-destination flights
     .sort(([, countA], [, countB]) => countB - countA)
     .slice(0, 20);
 
+  // Return aggregated data based on the input flight list
   return {
-    // Stats
-    earliestTime: minTime.toISOString(),
-    latestTime: maxTime.toISOString(),
-    totalFlightsProcessed: validFlights.length,
+    // Stats for the *filtered* period
+    totalFlightsProcessed: flights.length,
     uniqueAircraftCount: uniqueIcaos.size,
     uniqueCallsignCount: uniqueCallsigns.size,
-    // Chart Data
+    // Chart Data for the *filtered* period
     sortedAirports,
     sortedPairs,
     landingsByDay,
@@ -207,15 +275,15 @@ const processData = (flights) => {
     arrivalsFrom,
     allAirports: Object.keys(airportCounts).sort(),
     allPairs: Object.keys(airportPairs).sort(),
-    // Daily Activity Data
+    // Daily Activity for the *filtered* period
     dailyLabels,
     dailyUniqueAircraftCounts,
     dailyTotalLandings,
-    // Additional Daily Activity Data
     airportDailyActivity,
     pairDailyActivity
   };
 };
+
 
 // --- Chart Components ---
 
@@ -564,11 +632,12 @@ const TimeSeriesChart = ({ title, labels, data1, label1, data2, label2 }) => {
 // --- Main App Component ---
 
 function App() {
-  const [data, setData] = useState(null);
+  const [initialData, setInitialData] = useState(null); // Holds rawFlights, earliestTime, latestTime
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [selectedAirport, setSelectedAirport] = useState('all');
-  const [selectedPair, setSelectedPair] = useState('none');
+  const [selectedAirport, setSelectedAirport] = useState('all'); // Destination filter
+  const [selectedPair, setSelectedPair] = useState('none'); // Pair filter
+  const [dateRange, setDateRange] = useState(null); // Holds { start: DateValue, end: DateValue } or null
   const fileInputRef = React.createRef();
 
   const handleFileUpload = useCallback((event) => {
@@ -577,94 +646,132 @@ function App() {
 
     setLoading(true);
     setError(null);
-    setData(null);
+    setInitialData(null); // Clear previous raw data
     setSelectedAirport('all');
     setSelectedPair('none');
+    setDateRange(null); // Reset date filter
 
     Papa.parse(file, {
       header: true,
       skipEmptyLines: true,
       complete: (results) => {
         try {
-          // Basic validation
           if (!results.data || results.data.length === 0) {
             throw new Error("CSV file is empty or invalid.");
           }
           const requiredColumns = ['timestamp', 'icao', 'origin', 'destination'];
           const actualColumns = results.meta.fields.map(field => field ? field.trim() : '');
           if (!requiredColumns.every(col => actualColumns.includes(col))) {
-            throw new Error(`CSV must include columns: ${requiredColumns.join(', ')}. Found: ${actualColumns.join(', ')}`);
-          }
-          // Add check for date parsing errors during processing
-          const processed = processData(results.data);
-          // Example check if data processing returned something meaningful
-          if (!processed || !processed.allAirports || processed.allAirports.length === 0) {
-            throw new Error("Could not process data. Check CSV content and format, especially timestamps, origin, and destination columns.");
+             throw new Error(`CSV must include columns: ${requiredColumns.join(', ')}. Found: ${actualColumns.join(', ')}`);
           }
 
-          setData(processed);
+          // Perform initial processing only
+          const processed = processInitialData(results.data);
+
+          // No need for extensive checks here as processInitialData throws errors
+          setInitialData(processed); // Store raw flights and date range
           setLoading(false);
         } catch (err) {
           console.error("Processing Error:", err);
           setError(`Failed to process data: ${err.message}`);
           setLoading(false);
+          setInitialData(null); // Ensure data is null on error
         }
       },
       error: (err) => {
         console.error("Parsing Error:", err);
         setError(`Failed to parse CSV: ${err.message}`);
         setLoading(false);
+        setInitialData(null); // Ensure data is null on error
       }
     });
 
-    // Reset file input value so the same file can be re-uploaded
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
+  }, [fileInputRef]); // Dependencies remain the same
 
-  }, [fileInputRef]); // Add fileInputRef to dependencies
+  // --- Filtering Logic with DateRangePicker ---
+  const filteredFlights = useMemo(() => {
+    if (!initialData?.rawFlights) return [];
+
+    const { rawFlights } = initialData;
+
+    if (!dateRange?.start || !dateRange?.end) {
+      return rawFlights; // No filter applied
+    }
+
+    // Convert react-aria start/end dates (which are CalendarDate/DateTime) to JS Date objects
+    // representing the very beginning and end of the selected days in UTC for comparison.
+    const startFilterTime = dateRange.start.toDate(getLocalTimeZone());
+    startFilterTime.setHours(0, 0, 0, 0); // Start of the day in local time zone
+
+    const endFilterTime = dateRange.end.toDate(getLocalTimeZone());
+    endFilterTime.setHours(23, 59, 59, 999); // End of the day in local time zone
+
+    return rawFlights.filter(flight => {
+      // Compare flight timestamp (already a JS Date) with the filter range boundaries
+      const flightTimeMs = flight.timestamp.getTime();
+
+      const afterStart = flightTimeMs >= startFilterTime.getTime();
+      const beforeEnd = flightTimeMs <= endFilterTime.getTime();
+
+      return afterStart && beforeEnd;
+    });
+  }, [initialData?.rawFlights, dateRange]);
+
+
+  // --- Aggregation on Filtered Data ---
+  const displayedData = useMemo(() => {
+    // This performs all calculations (counts, stats, daily activity)
+    // based *only* on the flights that passed the date filter.
+    return aggregateFlightData(filteredFlights);
+  }, [filteredFlights]);
 
 
   // --- Click Handlers for Charts ---
   const handleAirportClick = useCallback((airportId) => {
-    if (data && data.allAirports.includes(airportId)) {
+    // Use displayedData.allAirports which is based on filtered data
+    if (displayedData && displayedData.allAirports.includes(airportId)) {
       setSelectedAirport(airportId);
-      setSelectedPair('none'); // Reset pair filter when airport is clicked
+      setSelectedPair('none');
     }
-  }, [data]);
+  }, [displayedData]); // Depends on the result of aggregation
 
   const handlePairClick = useCallback((pairId) => {
-    if (data && data.allPairs.includes(pairId)) {
+    // Use displayedData.allPairs which is based on filtered data
+    if (displayedData && displayedData.allPairs.includes(pairId)) {
       setSelectedPair(pairId);
-      setSelectedAirport('all'); // Reset airport filter when pair is clicked
+      setSelectedAirport('all');
     }
-  }, [data]);
+  }, [displayedData]); // Depends on the result of aggregation
 
-
-  // --- Combined Memoized Data for Time Charts ---
+  // --- Derive specific chart data from displayedData based on filters ---
   const displayLandingsByDay = useMemo(() => {
-    if (!data) return [];
-    if (selectedPair !== 'none' && data.pairLandingsByDay[selectedPair]) {
-      return data.pairLandingsByDay[selectedPair];
+    if (!displayedData) return [];
+    if (selectedPair !== 'none' && displayedData.pairLandingsByDay[selectedPair]) {
+      return displayedData.pairLandingsByDay[selectedPair];
     }
-    if (selectedAirport !== 'all' && data.airportLandingsByDay[selectedAirport]) {
-      return data.airportLandingsByDay[selectedAirport];
+    if (selectedAirport !== 'all' && displayedData.airportLandingsByDay[selectedAirport]) {
+      return displayedData.airportLandingsByDay[selectedAirport];
     }
-    return data.landingsByDay || [];
-  }, [data, selectedAirport, selectedPair]);
+    // Fallback to overall landings (for the filtered period)
+    return displayedData.landingsByDay || [];
+  }, [displayedData, selectedAirport, selectedPair]);
 
   const displayLandingsByHour = useMemo(() => {
-    if (!data) return [];
-    if (selectedPair !== 'none' && data.pairLandingsByHour[selectedPair]) {
-      return data.pairLandingsByHour[selectedPair];
+    if (!displayedData) return [];
+    if (selectedPair !== 'none' && displayedData.pairLandingsByHour[selectedPair]) {
+      return displayedData.pairLandingsByHour[selectedPair];
     }
-    if (selectedAirport !== 'all' && data.airportLandingsByHour[selectedAirport]) {
-      return data.airportLandingsByHour[selectedAirport];
+    if (selectedAirport !== 'all' && displayedData.airportLandingsByHour[selectedAirport]) {
+      return displayedData.airportLandingsByHour[selectedAirport];
     }
-    return data.landingsByHour || [];
-  }, [data, selectedAirport, selectedPair]);
+     // Fallback to overall landings (for the filtered period)
+    return displayedData.landingsByHour || [];
+  }, [displayedData, selectedAirport, selectedPair]);
 
-  // Determine the label for the time chart titles
+  // Determine the label for the time chart titles based on filters
   const activeFilterLabel = useMemo(() => {
     if (selectedPair !== 'none') return `Pair: ${selectedPair}`;
     if (selectedAirport !== 'all') return `Destination: ${selectedAirport}`;
@@ -680,70 +787,71 @@ function App() {
   const dayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   const hourLabels = Array.from({ length: 24 }, (_, i) => `${i.toString().padStart(2, '0')}:00`);
 
-  // Helper to format date/time strings
-  const formatDateTime = (isoString) => {
-    if (!isoString) return 'N/A';
+  // Helper to format Date objects or ISO strings
+  const formatDateTime = (dateOrIsoString) => {
+    if (!dateOrIsoString) return 'N/A';
     try {
-      const dt = new Date(isoString.endsWith('Z') ? isoString : isoString + 'Z');
+      let dt;
+      if (dateOrIsoString instanceof Date) {
+        dt = dateOrIsoString;
+      } else if (dateOrIsoString.toDate) { // Check if it's an @internationalized/date object
+        dt = dateOrIsoString.toDate(getLocalTimeZone()); // Convert to local JS Date
+      } else {
+        dt = new Date(dateOrIsoString); // Assume ISO string
+      }
+      if (isNaN(dt.getTime())) return 'Invalid Date';
       return dt.toLocaleString();
     } catch (e) {
-      console.warn("Invalid date format:", isoString);
+      console.warn("Invalid date format:", dateOrIsoString);
       return 'Invalid Date';
     }
   };
 
-  // --- Memoized Data for Arrivals From Chart ---
+  // Memoized Data for Arrivals From Chart (derived from displayedData)
   const arrivalsFromChartData = useMemo(() => {
-    if (!data || selectedAirport === 'all' || !data.arrivalsFrom || !data.arrivalsFrom[selectedAirport]) {
-      return []; // No destination airport selected or no arrival data
+    if (!displayedData || selectedAirport === 'all' || !displayedData.arrivalsFrom || !displayedData.arrivalsFrom[selectedAirport]) {
+      return [];
     }
-    // Convert the arrivals object for the selected destination airport into a sorted array
-    return Object.entries(data.arrivalsFrom[selectedAirport])
-      .sort(([, countA], [, countB]) => countB - countA) // Sort descending by count
-      .slice(0, 20); // Take top 20 sources
-  }, [data, selectedAirport]);
+    return Object.entries(displayedData.arrivalsFrom[selectedAirport])
+      .sort(([, countA], [, countB]) => countB - countA)
+      .slice(0, 20);
+  }, [displayedData, selectedAirport]);
 
-  // Filtered daily activity data based on selection
-  const filteredDailyActivity = useMemo(() => {
-    if (!data || !data.dailyLabels) return {
-      labels: [],
-      uniqueAircraftCounts: [],
-      totalLandings: []
-    };
+  // Filtered daily activity data based on selection (derived from displayedData)
+   const filteredDailyActivityChartData = useMemo(() => {
+    if (!displayedData || !displayedData.dailyLabels) {
+      return { labels: [], uniqueAircraftCounts: [], totalLandings: [] };
+    }
 
-    // If no filter, use all data
+    // Base data from the filtered & aggregated results
+    const { dailyLabels, dailyUniqueAircraftCounts, dailyTotalLandings, airportDailyActivity, pairDailyActivity } = displayedData;
+
+    // If no further filter (airport/pair), use the aggregated daily totals
     if (selectedAirport === 'all' && selectedPair === 'none') {
       return {
-        labels: data.dailyLabels,
-        uniqueAircraftCounts: data.dailyUniqueAircraftCounts,
-        totalLandings: data.dailyTotalLandings
+        labels: dailyLabels,
+        uniqueAircraftCounts: dailyUniqueAircraftCounts,
+        totalLandings: dailyTotalLandings
       };
     }
 
-    // Initialize arrays
-    const labels = [...data.dailyLabels];
+    // Apply airport or pair filter to the *already aggregated* daily data
+    const labels = [...dailyLabels];
     const uniqueAircraftCounts = Array(labels.length).fill(0);
     const totalLandings = Array(labels.length).fill(0);
 
-    // Filter by destination airport
     if (selectedAirport !== 'all') {
       labels.forEach((dateStr, index) => {
-        if (data.airportDailyActivity[dateStr] &&
-            data.airportDailyActivity[dateStr][selectedAirport]) {
-
-          const airportData = data.airportDailyActivity[dateStr][selectedAirport];
+        if (airportDailyActivity[dateStr]?.[selectedAirport]) {
+          const airportData = airportDailyActivity[dateStr][selectedAirport];
           uniqueAircraftCounts[index] = airportData.uniqueAircraft.size;
           totalLandings[index] = airportData.landings;
         }
       });
-    }
-    // Filter by pair
-    else if (selectedPair !== 'none') {
+    } else if (selectedPair !== 'none') {
       labels.forEach((dateStr, index) => {
-        if (data.pairDailyActivity[dateStr] &&
-            data.pairDailyActivity[dateStr][selectedPair]) {
-
-          const pairData = data.pairDailyActivity[dateStr][selectedPair];
+        if (pairDailyActivity[dateStr]?.[selectedPair]) {
+          const pairData = pairDailyActivity[dateStr][selectedPair];
           uniqueAircraftCounts[index] = pairData.uniqueAircraft.size;
           totalLandings[index] = pairData.flights;
         }
@@ -751,150 +859,242 @@ function App() {
     }
 
     return { labels, uniqueAircraftCounts, totalLandings };
-  }, [data, selectedAirport, selectedPair]);
+  }, [displayedData, selectedAirport, selectedPair]);
+
+  // --- Convert JS Date to CalendarDate for min/max Value ---  
+  const getCalendarDate = (jsDate) => {
+    if (!jsDate || !(jsDate instanceof Date)) return undefined;
+    // Convert JS Date (local) into a CalendarDate object
+    // We need year, month, day in the *local* time zone
+    return new CalendarDate(jsDate.getFullYear(), jsDate.getMonth() + 1, jsDate.getDate());
+    // Alternative if timestamps are UTC: use parseAbsoluteToLocal(jsDate.toISOString()).date;
+    // Or more robustly if input is guaranteed UTC:
+    // return toCalendarDate(new CalendarDateTime(jsDate.getUTCFullYear(), jsDate.getUTCMonth() + 1, jsDate.getUTCDate(), jsDate.getUTCHours(), jsDate.getUTCMinutes()));
+  };
 
   return (
-    <div className="container">
-      <h1>ICE Air Activity Visualizer</h1>
+    <I18nProvider locale={navigator.language || 'en-US'}>
+      <div className="container">
+        <h1>ICE Air Activity Analysis</h1>
 
-      <div className="upload-section">
-        <input
-          type="file"
-          accept=".csv"
-          onChange={handleFileUpload}
-          ref={fileInputRef} // Attach ref here
-        />
-        <span>Upload a CSV file (timestamp, icao, origin, destination, callsign)</span>
+        <div className="upload-section">
+          <input
+            type="file"
+            accept=".csv"
+            onChange={handleFileUpload}
+            ref={fileInputRef}
+          />
+          <span>Upload a CSV file (timestamp, icao, origin, destination, callsign)</span>
+        </div>
+
+        {loading && <p className="loading">Loading and processing data...</p>}
+        {error && <p className="error">Error: {error}</p>}
+
+        {/* Display content only after initial data is loaded */}
+        {initialData && (
+          <>
+            {/* --- Date Range Filter using React Aria --- */}
+            <div className="date-filter-section">
+                <DateRangePicker
+                    label="Filter by Date Range"
+                    value={dateRange}
+                    onChange={setDateRange}
+                    minValue={getCalendarDate(initialData.earliestTime)}
+                    maxValue={getCalendarDate(initialData.latestTime)}
+                    granularity="day" // Only select dates, not times
+                    isDisabled={loading}
+                    // Add some basic styling classes if needed
+                    // className="my-date-range-picker"
+                >
+                    <Label>Filter Date Range:</Label>
+                    <Group className="date-picker-group">
+                        <DateInput slot="start" className="date-input">
+                            {(segment) => <DateSegment segment={segment} className={`date-segment ${segment.isPlaceholder ? 'placeholder' : ''}`} />}
+                        </DateInput>
+                        <span aria-hidden="true">–</span>
+                        <DateInput slot="end" className="date-input">
+                            {(segment) => <DateSegment segment={segment} className={`date-segment ${segment.isPlaceholder ? 'placeholder' : ''}`} />}
+                        </DateInput>
+                        <Button className="calendar-button">▼</Button>
+                    </Group>
+                    <Popover>
+                        <Dialog className="calendar-dialog">
+                            <RangeCalendar>
+                                <header className="calendar-header">
+                                    <Button slot="previous">◀</Button>
+                                    <Heading />
+                                    <Button slot="next">▶</Button>
+                                </header>
+                                <CalendarGrid className="calendar-grid">
+                                    {(date) => <CalendarCell date={date} className="calendar-cell" />}
+                                </CalendarGrid>
+                            </RangeCalendar>
+                        </Dialog>
+                    </Popover>
+                </DateRangePicker>
+                {/* Optional: Add a manual clear button if needed, interacting with setDateRange(null) */}
+                {dateRange && (
+                    <Button onPress={() => setDateRange(null)} className="clear-range-button" isDisabled={loading}>
+                        Clear Range
+                    </Button>
+                )}
+            </div>
+
+            {/* --- Summary Statistics Section (Uses displayedData) --- */}
+            <div className="summary-stats">
+                <h2>Summary Statistics { dateRange ? '(Filtered)' : '(Overall)'}</h2>
+                <p>
+                    <strong>Time Range:</strong>
+                    {dateRange?.start ? formatDateTime(dateRange.start) : formatDateTime(initialData.earliestTime)}
+                     -
+                    {dateRange?.end ? formatDateTime(dateRange.end) : formatDateTime(initialData.latestTime)}
+                </p>
+                {/* Use stats from displayedData which reflects filtering */}
+                <p><strong>Total Flights Processed:</strong> {displayedData.totalFlightsProcessed.toLocaleString()}</p>
+                <p><strong>Unique Aircraft (ICAO):</strong> {displayedData.uniqueAircraftCount.toLocaleString()}</p>
+                <p><strong>Unique Callsigns:</strong> {displayedData.uniqueCallsignCount.toLocaleString()}</p>
+            </div>
+
+             {/* --- Airport/Pair Filters (Uses displayedData for options) --- */}
+            <div className="filters-container">
+              <div className="filter-section">
+                <label htmlFor="airport-filter">Filter by Destination Airport:</label>
+                <select
+                  id="airport-filter"
+                  value={selectedAirport}
+                  onChange={(e) => { setSelectedAirport(e.target.value); setSelectedPair('none'); }}
+                   // Options are based on airports present in the *filtered* data
+                  disabled={loading || !displayedData.allAirports || displayedData.allAirports.length === 0}
+                >
+                  <option value="all">All Destinations</option>
+                  {/* Sort airports alphabetically for dropdown */}
+                  {[...displayedData.allAirports].sort().map(airport => (
+                    <option key={airport} value={airport}>{airport}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="filter-section">
+                <label htmlFor="pair-filter">Filter by Airport Pair (Origin-Destination):</label>
+                <select
+                  id="pair-filter"
+                  value={selectedPair}
+                  onChange={(e) => { setSelectedPair(e.target.value); setSelectedAirport('all'); }}
+                  // Options are based on pairs present in the *filtered* data
+                  disabled={loading || !displayedData.allPairs || displayedData.allPairs.length === 0}
+                >
+                  <option value="none">No Pair Selected</option>
+                   {/* Sort pairs alphabetically for dropdown */}
+                  {[...displayedData.allPairs].sort().map(pair => (
+                    <option key={pair} value={pair}>{pair}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+
+            {/* --- Charts Grid (Uses data derived from displayedData) --- */}
+             {/* Add a check if displayedData exists and has data before rendering charts */}
+             {displayedData.totalFlightsProcessed > 0 ? (
+                <div className="charts-grid">
+                  {/* Row 1: Top Destinations/Pairs (from filtered data) */}
+                  <div className="chart-container">
+                    <BarChart
+                      title="Top 20 Destination Airports (Click to Filter)"
+                      labels={displayedData.sortedAirports.map(([id]) => id)}
+                      data={displayedData.sortedAirports.map(([, count]) => count)}
+                      label="Total Landings"
+                      onBarClick={handleAirportClick}
+                    />
+                  </div>
+                  <div className="chart-container">
+                    <BarChart
+                      title="Top 20 Most Frequent Airport Pairs (Origin-Destination, Click to Filter)"
+                      labels={displayedData.sortedPairs.map(([pair]) => pair)}
+                      data={displayedData.sortedPairs.map(([, count]) => count)}
+                      label="Total Flights"
+                      onBarClick={handlePairClick}
+                    />
+                  </div>
+
+                  {/* Row 2: Activity by Time (uses displayLandingsByDay/Hour derived from displayedData) */}
+                  <div className="chart-container">
+                    <BarChart
+                      title={`Activity by Day of Week (${activeFilterLabel})`}
+                      labels={dayLabels}
+                      data={displayLandingsByDay}
+                      label={timeChartDataLabel}
+                    />
+                  </div>
+                  <div className="chart-container">
+                    <BarChart
+                      title={`Activity by Hour of Day (${activeFilterLabel})`}
+                      labels={hourLabels}
+                      data={displayLandingsByHour}
+                      label={timeChartDataLabel}
+                    />
+                  </div>
+
+                  {/* Row 3: Arrivals From (uses arrivalsFromChartData derived from displayedData) */}
+                  {selectedAirport !== 'all' && arrivalsFromChartData.length > 0 && (
+                    <div className="chart-container">
+                      <BarChart
+                        title={`Top 20 Sources for Arrivals at ${selectedAirport}`}
+                        labels={arrivalsFromChartData.map(([source]) => source)}
+                        data={arrivalsFromChartData.map(([, count]) => count)}
+                        label="Arrivals"
+                      />
+                    </div>
+                  )}
+                   {/* Placeholder if destination selected but no arrival data *in the filtered range* */}
+                   {selectedAirport !== 'all' && arrivalsFromChartData.length === 0 && (
+                    <div className="chart-container chart-placeholder">
+                       No arrival data recorded for {selectedAirport} { dateRange ? 'in the selected date range.' : '.'}
+                    </div>
+                   )}
+
+
+                  {/* Row 4: Daily Activity (uses filteredDailyActivityChartData derived from displayedData) */}
+                  {filteredDailyActivityChartData.labels && filteredDailyActivityChartData.labels.length > 0 && (
+                    <div className="chart-container full-width">
+                      {/* Use DualBarChart or TimeSeriesChart - Using DualBarChart as before */}
+                       <DualBarChart
+                          key={`daily-${activeFilterLabel}-${dateRange?.start}-${dateRange?.end}`} // Key needs to change with data/filter
+                          title={`Daily Activity Over Time (${activeFilterLabel})`}
+                          labels={filteredDailyActivityChartData.labels}
+                          data1={filteredDailyActivityChartData.uniqueAircraftCounts}
+                          label1="# Unique Aircraft"
+                          data2={filteredDailyActivityChartData.totalLandings}
+                          label2={selectedPair !== 'none' ? '# Flights' : '# Landings'}
+                      />
+                      {/* Example using TimeSeriesChart instead:
+                      <TimeSeriesChart
+                        key={`daily-ts-${activeFilterLabel}-${startDate}-${endDate}`}
+                        title={`Daily Activity Over Time (${activeFilterLabel})`}
+                        labels={filteredDailyActivityChartData.labels}
+                        data1={filteredDailyActivityChartData.uniqueAircraftCounts}
+                        label1="# Unique Aircraft"
+                        data2={filteredDailyActivityChartData.totalLandings}
+                        label2={selectedPair !== 'none' ? '# Flights' : '# Landings'}
+                      />
+                      */}
+                    </div>
+                  )}
+                   {/* Placeholder if no daily data to show */}
+                   {(!filteredDailyActivityChartData.labels || filteredDailyActivityChartData.labels.length === 0) && (
+                       <div className="chart-container full-width chart-placeholder">
+                          No daily activity data to display { dateRange ? 'for the selected date range.' : '.'}
+                       </div>
+                   )}
+                </div>
+              ) : (
+                   // Show message if filters result in no data
+                   <p className="info-message">No flight data available for the selected date range or filters.</p>
+              )}
+          </>
+        )}
       </div>
-
-      {loading && <p className="loading">Loading and processing data...</p>}
-      {error && <p className="error">Error: {error}</p>}
-
-      {data && (
-        <>
-          {/* --- Summary Statistics Section --- */}
-          <div className="summary-stats">
-            <h2>Summary Statistics</h2>
-            <p><strong>Time Range:</strong> {formatDateTime(data.earliestTime)} - {formatDateTime(data.latestTime)}</p>
-            <p><strong>Total Flights Processed:</strong> {data.totalFlightsProcessed.toLocaleString()}</p>
-            <p><strong>Unique Aircraft (ICAO):</strong> {data.uniqueAircraftCount.toLocaleString()}</p>
-            <p><strong>Unique Callsigns:</strong> {data.uniqueCallsignCount.toLocaleString()}</p>
-          </div>
-
-          <div className="filters-container">
-            {/* Airport Filter */}
-            <div className="filter-section">
-              <label htmlFor="airport-filter">Filter by Destination Airport:</label>
-              <select
-                id="airport-filter"
-                value={selectedAirport}
-                onChange={(e) => { setSelectedAirport(e.target.value); setSelectedPair('none'); }}
-                disabled={!data.allAirports || data.allAirports.length === 0}
-              >
-                <option value="all">All Destinations</option>
-                {data.allAirports.map(airport => (
-                  <option key={airport} value={airport}>{airport}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Airport Pair Filter */}
-            <div className="filter-section">
-              <label htmlFor="pair-filter">Filter by Airport Pair (Origin-Destination):</label>
-              <select
-                id="pair-filter"
-                value={selectedPair}
-                onChange={(e) => { setSelectedPair(e.target.value); setSelectedAirport('all'); }}
-                disabled={!data.allPairs || data.allPairs.length === 0}
-              >
-                <option value="none">No Pair Selected</option>
-                {data.allPairs.map(pair => (
-                  <option key={pair} value={pair}>{pair}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-
-          <div className="charts-grid">
-            {/* --- Row 1: Overall Activity (Clickable) --- */}
-            <div className="chart-container">
-              <BarChart
-                title="Top 20 Destination Airports (Click to Filter)"
-                labels={data.sortedAirports.map(([id]) => id)}
-                data={data.sortedAirports.map(([, count]) => count)}
-                label="Total Landings"
-                onBarClick={handleAirportClick}
-              />
-            </div>
-            <div className="chart-container">
-              <BarChart
-                title="Top 20 Most Frequent Airport Pairs (Origin-Destination, Click to Filter)"
-                labels={data.sortedPairs.map(([pair]) => pair)}
-                data={data.sortedPairs.map(([, count]) => count)}
-                label="Total Flights"
-                onBarClick={handlePairClick}
-              />
-            </div>
-
-            {/* --- Row 2: Activity by Time (Dynamically Filtered) --- */}
-            <div className="chart-container">
-              <BarChart
-                title={`Activity by Day of Week (${activeFilterLabel})`}
-                labels={dayLabels}
-                data={displayLandingsByDay}
-                label={timeChartDataLabel}
-              />
-            </div>
-            <div className="chart-container">
-              <BarChart
-                title={`Activity by Hour of Day (${activeFilterLabel})`}
-                labels={hourLabels}
-                data={displayLandingsByHour}
-                label={timeChartDataLabel}
-              />
-            </div>
-
-            {/* --- Row 3: Arrivals From (Conditional) --- */}
-            {selectedAirport !== 'all' && arrivalsFromChartData.length > 0 && (
-              <div className="chart-container">
-                <BarChart
-                  title={`Top 20 Sources for Arrivals at ${selectedAirport}`}
-                  labels={arrivalsFromChartData.map(([source]) => source)}
-                  data={arrivalsFromChartData.map(([, count]) => count)}
-                  label="Arrivals"
-                />
-              </div>
-            )}
-            {selectedAirport !== 'all' && arrivalsFromChartData.length === 0 && data.arrivalsFrom && data.arrivalsFrom[selectedAirport] === undefined && (
-              <div className="chart-container chart-placeholder">
-                  No arrival data recorded for {selectedAirport}.
-              </div>
-            )}
-
-            {/* --- NEW Row 4: Daily Activity Time Series --- */}
-            {filteredDailyActivity.labels && filteredDailyActivity.labels.length > 0 && (
-              <div className="chart-container full-width">
-                <DualBarChart
-                  key={`daily-${activeFilterLabel}`}
-                  title={`Daily Activity Over Time (${activeFilterLabel})`}
-                  labels={filteredDailyActivity.labels}
-                  data1={filteredDailyActivity.uniqueAircraftCounts}
-                  label1="# Unique Aircraft"
-                  data2={filteredDailyActivity.totalLandings}
-                  label2={selectedPair !== 'none' ? '# Flights' : '# Landings'}
-                />
-              </div>
-            )}
-            {(!filteredDailyActivity.labels || filteredDailyActivity.labels.length === 0) && data && (
-                 <div className="chart-container full-width chart-placeholder">
-                    No daily activity data to display for the selected filter or time range.
-                 </div>
-            )}
-          </div>
-        </>
-      )}
-    </div>
+    </I18nProvider>
   );
 }
 
