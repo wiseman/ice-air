@@ -114,7 +114,7 @@ const LeafletMap = ({
       
       // Create circle marker
       const radius = getCircleSize(code);
-      const color = selectedAirport === code ? '#ff9f40' : '#00e6ff';
+      const color = selectedAirport === code ? '#ff9f40' : '#8a2be2';
       
       const marker = L.circleMarker([lat, lng], {
         radius,
@@ -173,7 +173,7 @@ const LeafletMap = ({
       const opacity = Math.min(0.9, 0.3 + (count / maxCount) * 0.6);
       
       // Choose color based on selection state
-      const color = isSelected ? '#ff9f40' : '#00e6ff';
+      const color = isSelected ? '#ff9f40' : '#8a2be2';
       
       // Create polyline
       const flightPath = L.polyline(pathCoords, {
