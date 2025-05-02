@@ -65,18 +65,19 @@ const LeafletMap = ({
   defaultCenter,
   defaultZoom
 }) => {
+  const mapContainerRef = useRef(null);
   const mapRef = useRef(null);
-  const mapInstanceRef = useRef(null);
-  const airportLayersRef = useRef({});
-  const pathLayersRef = useRef({});
-  
-  // Initialize map
-  useEffect(() => {
-    if (!mapRef.current) return;
+  const airportMarkersRef = useRef({});
+  const flightPathsRef = useRef({});
+  const arrowsRef = useRef({});
 
-    // Create map if it doesn't exist
-    if (!mapInstanceRef.current) {
-      mapInstanceRef.current = L.map(mapRef.current, {
+  // Initialize the map
+  useEffect(() => {
+    if (!mapContainerRef.current) return;
+    
+    // Initialize the map if it doesn't exist
+    if (!mapRef.current) {
+      mapRef.current = L.map(mapContainerRef.current, {
         center: defaultCenter,
         zoom: defaultZoom,
         attributionControl: true
@@ -85,27 +86,27 @@ const LeafletMap = ({
       // Add tile layer
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-      }).addTo(mapInstanceRef.current);
+      }).addTo(mapRef.current);
     }
     
-    // Cleanup on unmount
+    // Clean up the map on unmount
     return () => {
-      if (mapInstanceRef.current) {
-        mapInstanceRef.current.remove();
-        mapInstanceRef.current = null;
+      if (mapRef.current) {
+        mapRef.current.remove();
+        mapRef.current = null;
       }
     };
-  }, [defaultCenter, defaultZoom]);
+  }, []);
   
-  // Update airports on filteredAirports change
+  // Add airport markers
   useEffect(() => {
-    if (!mapInstanceRef.current) return;
+    if (!mapRef.current) return;
     
-    // Clear previous airport markers
-    Object.values(airportLayersRef.current).forEach(layer => {
-      mapInstanceRef.current.removeLayer(layer);
+    // Remove existing airport markers
+    Object.values(airportMarkersRef.current).forEach(marker => {
+      marker.remove();
     });
-    airportLayersRef.current = {};
+    airportMarkersRef.current = {};
     
     // Add airport markers
     filteredAirports.forEach(airport => {
@@ -122,30 +123,39 @@ const LeafletMap = ({
         weight: 1,
         opacity: 1,
         fillOpacity: 0.7
-      }).addTo(mapInstanceRef.current);
+      }).addTo(mapRef.current);
       
       // Add tooltip
       marker.bindTooltip(`<div><strong>${code}</strong><br>Traffic: ${traffic} flights</div>`, {
         direction: 'top',
         offset: [0, -10],
-        opacity: 0.9,
-        className: 'custom-tooltip'
+        opacity: 0.9
       });
       
       // Store reference to marker
-      airportLayersRef.current[code] = marker;
+      airportMarkersRef.current[code] = marker;
     });
   }, [filteredAirports, getCircleSize, selectedAirport]);
-  
-  // Update flight paths
+
+  // Add flight paths with directional arrows
   useEffect(() => {
-    if (!mapInstanceRef.current) return;
+    if (!mapRef.current) return;
     
-    // Clear previous path layers
-    Object.values(pathLayersRef.current).forEach(layer => {
-      mapInstanceRef.current.removeLayer(layer);
+    // Find max traffic count for scaling
+    const maxCount = trafficData.length > 0 ? trafficData[0].count : 1;
+    
+    // Remove existing flight paths and arrows
+    Object.values(flightPathsRef.current).forEach(path => {
+      path.remove();
     });
-    pathLayersRef.current = {};
+    flightPathsRef.current = {};
+    
+    Object.values(arrowsRef.current).forEach(arrow => {
+      if (arrow.parentNode) {
+        arrow.parentNode.removeChild(arrow);
+      }
+    });
+    arrowsRef.current = {};
     
     // Add flight paths
     trafficData.forEach(route => {
@@ -153,11 +163,10 @@ const LeafletMap = ({
       const pairKey = `${origin}-${destination}`;
       const isSelected = selectedPair === pairKey;
       
-      // Calculate curved path
+      // Calculate path
       const pathCoords = calculateCurvedPath(originCoords, destCoords);
       
       // Calculate line thickness based on flight count (between 1 and 5)
-      const maxCount = trafficData[0]?.count || 1;
       const weight = 1 + Math.min(4, (count / maxCount) * 4);
       
       // Calculate color opacity based on flight count
@@ -167,26 +176,109 @@ const LeafletMap = ({
       const color = isSelected ? '#ff9f40' : '#00e6ff';
       
       // Create polyline
-      const path = L.polyline(pathCoords, {
-        color,
+      const flightPath = L.polyline(pathCoords, {
         weight,
+        color,
         opacity,
-        dashArray: isSelected ? '' : '4,4' // Dashed if not selected
-      }).addTo(mapInstanceRef.current);
+        dashArray: isSelected ? "" : "4,4" // Dashed if not selected
+      }).addTo(mapRef.current);
       
       // Add tooltip
-      path.bindTooltip(
+      flightPath.bindTooltip(
         `<div><strong>From-To: ${origin} → ${destination}</strong><br><strong>Flights: ${count}</strong></div>`,
-        { direction: 'top', opacity: 0.9, className: 'custom-tooltip' }
+        { direction: 'top', opacity: 0.9 }
       );
       
       // Store reference to path
-      pathLayersRef.current[pairKey] = path;
+      flightPathsRef.current[pairKey] = flightPath;
+      
+      // Add directional arrow
+      const pathLength = pathCoords.length;
+      const midIndex = Math.floor(pathLength / 2);
+      
+      // Get point just before middle for direction
+      const point1 = mapRef.current.latLngToLayerPoint(
+        L.latLng(pathCoords[midIndex > 0 ? midIndex - 1 : 0])
+      );
+      
+      // Get middle point for arrow position
+      const point2 = mapRef.current.latLngToLayerPoint(
+        L.latLng(pathCoords[midIndex])
+      );
+      
+      // Calculate direction
+      const dx = point2.x - point1.x;
+      const dy = point2.y - point1.y;
+      const angle = Math.atan2(dy, dx) * 180 / Math.PI;
+      
+      // Calculate size of arrow (scale with line weight)
+      const arrowSize = 6 + weight * 1.5;
+      
+      // Use the SVG renderer to add arrows
+      const svg = mapRef.current._renderer._container;
+      
+      // Create a new arrow marker as an SVG path
+      const arrowPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      arrowPath.setAttribute("id", `arrow-${pairKey}`);
+      arrowPath.setAttribute("d", `M 0,${-arrowSize} L ${arrowSize*1.5},0 L 0,${arrowSize} Z`);
+      arrowPath.setAttribute("fill", color);
+      arrowPath.setAttribute("fill-opacity", opacity.toString());
+      arrowPath.setAttribute("stroke", "none");
+      arrowPath.setAttribute("transform", `translate(${point2.x},${point2.y}) rotate(${angle})`);
+      
+      // Add the arrow to the SVG container
+      svg.appendChild(arrowPath);
+      
+      // Store reference to arrow
+      arrowsRef.current[pairKey] = arrowPath;
+      
+      // Update the arrow when the map moves
+      const updateArrow = () => {
+        if (!mapRef.current) return;
+        
+        // Update points based on new map view
+        const newPoint1 = mapRef.current.latLngToLayerPoint(
+          L.latLng(pathCoords[midIndex > 0 ? midIndex - 1 : 0])
+        );
+        const newPoint2 = mapRef.current.latLngToLayerPoint(
+          L.latLng(pathCoords[midIndex])
+        );
+        
+        // Calculate new direction
+        const newDx = newPoint2.x - newPoint1.x;
+        const newDy = newPoint2.y - newPoint1.y;
+        const newAngle = Math.atan2(newDy, newDx) * 180 / Math.PI;
+        
+        // Update transform
+        arrowPath.setAttribute("transform", `translate(${newPoint2.x},${newPoint2.y}) rotate(${newAngle})`);
+      };
+      
+      // Add event listeners for map movements
+      mapRef.current.on('moveend', updateArrow);
+      mapRef.current.on('zoomend', updateArrow);
+      
+      // Store the event handlers for cleanup
+      flightPath._updateArrow = updateArrow;
     });
+    
+    // Clean up event listeners when the component unmounts or trafficData changes
+    return () => {
+      if (mapRef.current) {
+        Object.values(flightPathsRef.current).forEach(path => {
+          if (path._updateArrow) {
+            mapRef.current.off('moveend', path._updateArrow);
+            mapRef.current.off('zoomend', path._updateArrow);
+          }
+        });
+      }
+    };
   }, [trafficData, selectedPair]);
-  
+
   return (
-    <div ref={mapRef} style={{ height: '600px', width: '100%' }}></div>
+    <div 
+      ref={mapContainerRef} 
+      style={{ height: '600px', width: '100%' }}
+    />
   );
 };
 
