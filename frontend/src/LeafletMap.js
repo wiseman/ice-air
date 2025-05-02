@@ -220,7 +220,7 @@ const LeafletMap = ({
       // Create a new arrow marker as an SVG path
       const arrowPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
       arrowPath.setAttribute("id", `arrow-${pairKey}`);
-      arrowPath.setAttribute("d", `M 0,${-arrowSize} L ${arrowSize*1.5},0 L 0,${arrowSize} Z`);
+      arrowPath.setAttribute("d", `M 0,${-arrowSize / 2} L ${arrowSize * 1.5},0 L 0,${arrowSize / 2} Z`);
       arrowPath.setAttribute("fill", color);
       arrowPath.setAttribute("fill-opacity", opacity.toString());
       arrowPath.setAttribute("stroke", "none");
