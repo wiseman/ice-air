@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useMemo, useRef, useEffect, Suspense } from 'react';
 import Papa from 'papaparse';
 import 'chartjs-adapter-date-fns';        // registers the adapter
 import { enUS } from 'date-fns/locale';
@@ -38,6 +38,7 @@ import {
   toCalendarDate
 } from '@internationalized/date';
 import { I18nProvider } from '@react-aria/i18n';
+import MapView from './MapView';
 
 ChartJS.register(
   CategoryScale,
@@ -1072,17 +1073,6 @@ function App() {
                           data2={filteredDailyActivityChartData.totalLandings}
                           label2={selectedPair !== 'none' ? '# Flights' : '# Flights'}
                       />
-                      {/* Example using TimeSeriesChart instead:
-                      <TimeSeriesChart
-                        key={`daily-ts-${activeFilterLabel}-${startDate}-${endDate}`}
-                        title={`Daily Activity Over Time (${activeFilterLabel})`}
-                        labels={filteredDailyActivityChartData.labels}
-                        data1={filteredDailyActivityChartData.uniqueAircraftCounts}
-                        label1="# Unique Aircraft"
-                        data2={filteredDailyActivityChartData.totalLandings}
-                        label2={selectedPair !== 'none' ? '# Flights' : '# Landings'}
-                      />
-                      */}
                     </div>
                   )}
                    {/* Placeholder if no daily data to show */}
@@ -1095,6 +1085,18 @@ function App() {
               ) : (
                    // Show message if filters result in no data
                    <p className="info-message">No flight data available for the selected date range or filters.</p>
+              )}
+              
+              {/* Map visualization section */}
+              {displayedData.totalFlightsProcessed > 0 && (
+                <div className="map-section">
+                  <h2>Flight Routes Map</h2>
+                  <MapView 
+                    flightData={filteredFlights} 
+                    selectedAirport={selectedAirport === 'all' ? null : selectedAirport}
+                    selectedPair={selectedPair === 'none' ? null : selectedPair}
+                  />
+                </div>
               )}
           </>
         )}
