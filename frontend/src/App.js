@@ -782,7 +782,7 @@ function App() {
 
   // Determine the label for the time chart titles based on filters
   const activeFilterLabel = useMemo(() => {
-    if (selectedPair !== 'none') return `Pair: ${selectedPair}`;
+    if (selectedPair !== 'none') return `Leg: ${selectedPair}`;
     if (selectedAirport !== 'all') return `Destination: ${selectedAirport}`;
     return 'All Destinations';
   }, [selectedAirport, selectedPair]);
@@ -790,7 +790,7 @@ function App() {
   // Determine the label for the data points in time charts
   const timeChartDataLabel = useMemo(() => {
     if (selectedPair !== 'none') return 'Flights';
-    return 'Landings';
+    return 'Flights';
   }, [selectedPair]);
 
   const dayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -953,16 +953,10 @@ function App() {
 
             {/* --- Summary Statistics Section (Uses displayedData) --- */}
             <div className="summary-stats">
-                <h2>Summary Statistics { dateRange ? '(Filtered)' : '(Overall)'}</h2>
-                <p>
-                    <strong>Time Range:</strong>
-                    {dateRange?.start ? formatDateTime(dateRange.start) : formatDateTime(initialData.earliestTime)}
-                     -
-                    {dateRange?.end ? formatDateTime(dateRange.end) : formatDateTime(initialData.latestTime)}
-                </p>
+                <h2>Summary Statistics</h2>
                 {/* Use stats from displayedData which reflects filtering */}
-                <p><strong>Total Flights Processed:</strong> {displayedData.totalFlightsProcessed.toLocaleString()}</p>
-                <p><strong>Unique Aircraft (ICAO):</strong> {displayedData.uniqueAircraftCount.toLocaleString()}</p>
+                <p><strong>Total Flights:</strong> {displayedData.totalFlightsProcessed.toLocaleString()}</p>
+                <p><strong>Unique Aircraft:</strong> {displayedData.uniqueAircraftCount.toLocaleString()}</p>
                 <p><strong>Unique Callsigns:</strong> {displayedData.uniqueCallsignCount.toLocaleString()}</p>
             </div>
 
@@ -1011,7 +1005,7 @@ function App() {
                   {/* Row 1: Top Destinations/Pairs (from filtered data) */}
                   <div className="chart-container">
                     <BarChart
-                      title="Top 20 Destination Airports (Click to Filter)"
+                      title="Top 20 Destination Airports"
                       labels={displayedData.sortedAirports.map(([id]) => id)}
                       data={displayedData.sortedAirports.map(([, count]) => count)}
                       label="Total Landings"
@@ -1020,7 +1014,7 @@ function App() {
                   </div>
                   <div className="chart-container">
                     <BarChart
-                      title="Top 20 Most Frequent Airport Pairs (Origin-Destination, Click to Filter)"
+                      title="Top 20 Most Frequent Legs"
                       labels={displayedData.sortedPairs.map(([pair]) => pair)}
                       data={displayedData.sortedPairs.map(([, count]) => count)}
                       label="Total Flights"
@@ -1076,7 +1070,7 @@ function App() {
                           data1={filteredDailyActivityChartData.uniqueAircraftCounts}
                           label1="# Unique Aircraft"
                           data2={filteredDailyActivityChartData.totalLandings}
-                          label2={selectedPair !== 'none' ? '# Flights' : '# Landings'}
+                          label2={selectedPair !== 'none' ? '# Flights' : '# Flights'}
                       />
                       {/* Example using TimeSeriesChart instead:
                       <TimeSeriesChart
