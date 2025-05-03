@@ -5,7 +5,7 @@ import 'leaflet/dist/leaflet.css';
 // Separate component for the actual map to avoid hook issues
 const Map = React.lazy(() => import('./LeafletMap'));
 
-const MapView = ({ flightData, selectedAirport, selectedPair }) => {
+const MapView = ({ flightData, selectedAirport, selectedPair, onAirportClick, onBackgroundClick }) => {
   const [airports, setAirports] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -150,6 +150,8 @@ const MapView = ({ flightData, selectedAirport, selectedPair }) => {
           selectedPair={selectedPair}
           defaultCenter={defaultCenter}
           defaultZoom={defaultZoom}
+          onAirportClick={onAirportClick}
+          onBackgroundClick={onBackgroundClick}
         />
       </React.Suspense>
     </div>

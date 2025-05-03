@@ -39,6 +39,7 @@ import {
 } from '@internationalized/date';
 import { I18nProvider } from '@react-aria/i18n';
 import MapView from './MapView';
+import FlightsTable from './FlightsTable';
 
 ChartJS.register(
   CategoryScale,
@@ -110,7 +111,8 @@ const aggregateFlightData = (flights) => {
       dailyUniqueAircraftCounts: [],
       dailyTotalLandings: [],
       airportDailyActivity: {},
-      pairDailyActivity: {}
+      pairDailyActivity: {},
+      numberOfDays: 0
     };
   }
 
@@ -281,7 +283,8 @@ const aggregateFlightData = (flights) => {
     dailyUniqueAircraftCounts,
     dailyTotalLandings,
     airportDailyActivity,
-    pairDailyActivity
+    pairDailyActivity,
+    numberOfDays: dailyLabels.length
   };
 };
 
@@ -705,30 +708,39 @@ function App() {
   const filteredFlights = useMemo(() => {
     if (!initialData?.rawFlights) return [];
 
-    const { rawFlights } = initialData;
+    let flightsToFilter = initialData.rawFlights;
 
-    if (!dateRange?.start || !dateRange?.end) {
-      return rawFlights; // No filter applied
+    // 1. Filter by Date Range
+    if (dateRange?.start && dateRange?.end) {
+      const startFilterTime = dateRange.start.toDate(getLocalTimeZone());
+      startFilterTime.setHours(0, 0, 0, 0); // Start of the day
+      const endFilterTime = dateRange.end.toDate(getLocalTimeZone());
+      endFilterTime.setHours(23, 59, 59, 999); // End of the day
+
+      flightsToFilter = flightsToFilter.filter(flight => {
+        const flightTimeMs = flight.timestamp.getTime();
+        const afterStart = flightTimeMs >= startFilterTime.getTime();
+        const beforeEnd = flightTimeMs <= endFilterTime.getTime();
+        return afterStart && beforeEnd;
+      });
     }
 
-    // Convert react-aria start/end dates (which are CalendarDate/DateTime) to JS Date objects
-    // representing the very beginning and end of the selected days in UTC for comparison.
-    const startFilterTime = dateRange.start.toDate(getLocalTimeZone());
-    startFilterTime.setHours(0, 0, 0, 0); // Start of the day in local time zone
+    // 2. Filter by Selected Airport (Destination)
+    if (selectedAirport !== 'all') {
+      flightsToFilter = flightsToFilter.filter(flight => flight.destination === selectedAirport);
+    }
 
-    const endFilterTime = dateRange.end.toDate(getLocalTimeZone());
-    endFilterTime.setHours(23, 59, 59, 999); // End of the day in local time zone
+    // 3. Filter by Selected Pair (Origin-Destination)
+    // This takes precedence if both airport and pair are somehow selected (UI prevents this)
+    if (selectedPair !== 'none') {
+      flightsToFilter = flightsToFilter.filter(flight => 
+          flight.origin && flight.destination && `${flight.origin}-${flight.destination}` === selectedPair
+      );
+    }
 
-    return rawFlights.filter(flight => {
-      // Compare flight timestamp (already a JS Date) with the filter range boundaries
-      const flightTimeMs = flight.timestamp.getTime();
-
-      const afterStart = flightTimeMs >= startFilterTime.getTime();
-      const beforeEnd = flightTimeMs <= endFilterTime.getTime();
-
-      return afterStart && beforeEnd;
-    });
-  }, [initialData?.rawFlights, dateRange]);
+    return flightsToFilter;
+    
+  }, [initialData?.rawFlights, dateRange, selectedAirport, selectedPair]); // <-- Add selectedAirport and selectedPair to dependencies
 
 
   // --- Aggregation on Filtered Data ---
@@ -755,6 +767,21 @@ function App() {
       setSelectedAirport('all');
     }
   }, [displayedData]); // Depends on the result of aggregation
+
+  // --- NEW: Handler for map clicks ---
+  const handleMapAirportClick = useCallback((airportCode) => {
+    // Check if the clicked airport is valid within the current context
+    if (displayedData && displayedData.allAirports.includes(airportCode)) {
+      setSelectedAirport(airportCode);
+      setSelectedPair('none'); // Reset pair filter when airport is clicked on map
+    }
+  }, [displayedData]); // Depends on displayedData for validation
+
+  // --- NEW: Handler for map background clicks ---
+  const handleMapBackgroundClick = useCallback(() => {
+    setSelectedAirport('all');
+    setSelectedPair('none');
+  }, []); // No dependencies needed
 
   // --- Derive specific chart data from displayedData based on filters ---
   const displayLandingsByDay = useMemo(() => {
@@ -882,6 +909,21 @@ function App() {
     // return toCalendarDate(new CalendarDateTime(jsDate.getUTCFullYear(), jsDate.getUTCMonth() + 1, jsDate.getUTCDate(), jsDate.getUTCHours(), jsDate.getUTCMinutes()));
   };
 
+  // --- Determine if filters are active --- 
+  const isDateRangeFiltered = useMemo(() => {
+    // Check if the dateRange is set and different from the initial full range
+    if (!dateRange || !initialData?.earliestTime || !initialData?.latestTime) {
+        return false; // No range set or initial data not ready
+    }
+    const startMatchesInitial = dateRange.start.compare(getCalendarDate(initialData.earliestTime)) === 0;
+    const endMatchesInitial = dateRange.end.compare(getCalendarDate(initialData.latestTime)) === 0;
+    return !(startMatchesInitial && endMatchesInitial);
+  }, [dateRange, initialData?.earliestTime, initialData?.latestTime]);
+
+  const isAirportFiltered = selectedAirport !== 'all';
+  const isPairFiltered = selectedPair !== 'none';
+  const filtersActive = isDateRangeFiltered || isAirportFiltered || isPairFiltered;
+
   return (
     <I18nProvider locale={navigator.language || 'en-US'}>
       <div className="container">
@@ -959,6 +1001,7 @@ function App() {
                 <p><strong>Total Flights:</strong> {displayedData.totalFlightsProcessed.toLocaleString()}</p>
                 <p><strong>Unique Aircraft:</strong> {displayedData.uniqueAircraftCount.toLocaleString()}</p>
                 <p><strong>Unique Callsigns:</strong> {displayedData.uniqueCallsignCount.toLocaleString()}</p>
+                <p><strong>Number of Days:</strong> {displayedData.numberOfDays}</p>
             </div>
 
              {/* --- Airport/Pair Filters (Uses displayedData for options) --- */}
@@ -1095,9 +1138,23 @@ function App() {
                     flightData={filteredFlights} 
                     selectedAirport={selectedAirport === 'all' ? null : selectedAirport}
                     selectedPair={selectedPair === 'none' ? null : selectedPair}
+                    onAirportClick={handleMapAirportClick}
+                    onBackgroundClick={handleMapBackgroundClick}
                   />
                 </div>
               )}
+
+            {/* --- Filtered Flights Table (conditional) --- */}
+            {filtersActive && displayedData.totalFlightsProcessed > 0 && (
+              <div className="table-section">
+                 <FlightsTable flights={filteredFlights} />
+              </div>
+            )}
+            {filtersActive && displayedData.totalFlightsProcessed === 0 && (
+              <div className="table-section">
+                 <p className="info-message">No flights match the current filter criteria.</p>
+              </div>
+            )}
           </>
         )}
       </div>

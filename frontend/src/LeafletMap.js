@@ -63,7 +63,9 @@ const LeafletMap = ({
   selectedAirport,
   selectedPair,
   defaultCenter,
-  defaultZoom
+  defaultZoom,
+  onAirportClick,
+  onBackgroundClick
 }) => {
   const mapContainerRef = useRef(null);
   const mapRef = useRef(null);
@@ -88,15 +90,33 @@ const LeafletMap = ({
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
       }).addTo(mapRef.current);
     }
+
+    // --- NEW: Add listener for map background clicks ---
+    if (mapRef.current && onBackgroundClick) {
+      const mapClickHandler = (e) => {
+        // Check if the click was on the map directly, not on a layer (like a marker)
+        if (e.originalEvent.target === mapRef.current._container) {
+          onBackgroundClick();
+        }
+      };
+      mapRef.current.on('click', mapClickHandler);
+
+      // Store the handler to remove it later
+      mapRef.current._backgroundClickHandler = mapClickHandler;
+    }
     
     // Clean up the map on unmount
     return () => {
       if (mapRef.current) {
+        // --- NEW: Remove background click listener ---
+        if (mapRef.current._backgroundClickHandler) {
+          mapRef.current.off('click', mapRef.current._backgroundClickHandler);
+        }
         mapRef.current.remove();
         mapRef.current = null;
       }
     };
-  }, []);
+  }, [onBackgroundClick]); // Add onBackgroundClick as dependency
   
   // Add airport markers
   useEffect(() => {
@@ -132,10 +152,17 @@ const LeafletMap = ({
         opacity: 0.9
       });
       
+      // Add click handler
+      marker.on('click', () => {
+        if (onAirportClick) {
+          onAirportClick(code);
+        }
+      });
+      
       // Store reference to marker
       airportMarkersRef.current[code] = marker;
     });
-  }, [filteredAirports, getCircleSize, selectedAirport]);
+  }, [filteredAirports, getCircleSize, selectedAirport, onAirportClick]);
 
   // Add flight paths with directional arrows
   useEffect(() => {

@@ -395,4 +395,75 @@ canvas {
 .clear-range-button:disabled {
   opacity: 0.5;
   cursor: default;
+}
+
+/* --- Flights Table Styling --- */
+.table-section {
+  margin-top: 30px; /* Add space above the table section */
+  padding: 20px;
+  background-color: rgba(255, 255, 255, 0.03); /* Subtle background */
+  border-radius: 8px;
+}
+
+.table-container h3 {
+  color: rgba(200, 200, 200, 0.9);
+  font-family: 'Inter', sans-serif;
+  font-weight: 600;
+  margin-bottom: 15px;
+  font-size: 1.1em;
+}
+
+.flights-table {
+  width: 100%;
+  border-collapse: collapse; /* Remove space between borders */
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.85em;
+  color: rgba(200, 200, 200, 0.85);
+}
+
+.flights-table thead {
+  border-bottom: 2px solid rgba(0, 230, 255, 0.5); /* Teal accent border */
+}
+
+.flights-table th {
+  text-align: left;
+  padding: 10px 8px;
+  font-weight: 600;
+  color: rgba(230, 230, 230, 0.95);
+  font-family: 'Inter', sans-serif;
+  font-size: 0.9em;
+}
+
+.flights-table tbody tr {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08); /* Subtle row separator */
+}
+
+.flights-table tbody tr:last-child {
+  border-bottom: none; /* No border on the last row */
+}
+
+.flights-table td {
+  padding: 8px 8px;
+  vertical-align: top; /* Align content to the top if it wraps */
+}
+
+/* Style for the '...' indicator if more rows exist */
+.table-container > p {
+  text-align: center;
+  color: rgba(200, 200, 200, 0.6);
+  font-style: italic;
+  margin-top: 10px;
+}
+
+/* Style for the 'no flights match' message */
+.table-section .info-message {
+    color: rgba(200, 200, 200, 0.8);
+    font-style: italic;
+    text-align: center;
+    padding: 20px;
+}
+
+/* Adjustments for better readability */
+.flights-table td:nth-child(1) { /* Timestamp column */
+  white-space: nowrap; /* Prevent timestamp wrapping if possible */
 } 
