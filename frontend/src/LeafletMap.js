@@ -212,7 +212,7 @@ const LeafletMap = ({
       
       // Add tooltip
       flightPath.bindTooltip(
-        `<div><strong>From-To: ${origin} → ${destination}</strong><br><strong>Flights: ${count}</strong></div>`,
+        `<div><strong>${origin} → ${destination}</strong><br><strong>Flights: ${count}</strong></div>`,
         { direction: 'top', opacity: 0.9 }
       );
       
@@ -252,6 +252,34 @@ const LeafletMap = ({
       arrowPath.setAttribute("fill-opacity", opacity.toString());
       arrowPath.setAttribute("stroke", "none");
       arrowPath.setAttribute("transform", `translate(${point2.x},${point2.y}) rotate(${angle})`);
+      
+      // --- NEW: Add hover events to arrow --- 
+      const handleArrowMouseOver = (e) => {
+        const targetPath = flightPathsRef.current[pairKey];
+        if (targetPath) {
+           // Open the tooltip associated with the main flight path
+           // Optional: Try to position it near the mouse event
+           const map = mapRef.current;
+           if (map) {
+             const latlng = map.mouseEventToLatLng(e);
+             targetPath.openTooltip(latlng);
+           } else {
+             targetPath.openTooltip(); 
+           }
+        }
+      };
+      const handleArrowMouseOut = () => {
+        const targetPath = flightPathsRef.current[pairKey];
+        if (targetPath) {
+          targetPath.closeTooltip();
+        }
+      };
+
+      arrowPath.addEventListener('mouseover', handleArrowMouseOver);
+      arrowPath.addEventListener('mouseout', handleArrowMouseOut);
+      // Store handlers for cleanup
+      arrowPath._mouseOverHandler = handleArrowMouseOver;
+      arrowPath._mouseOutHandler = handleArrowMouseOut;
       
       // Add the arrow to the SVG container
       svg.appendChild(arrowPath);
@@ -297,6 +325,17 @@ const LeafletMap = ({
             mapRef.current.off('zoomend', path._updateArrow);
           }
         });
+
+        // --- NEW: Clean up arrow hover listeners ---
+        Object.values(arrowsRef.current).forEach(arrow => {
+          if (arrow._mouseOverHandler) {
+            arrow.removeEventListener('mouseover', arrow._mouseOverHandler);
+          }
+          if (arrow._mouseOutHandler) {
+            arrow.removeEventListener('mouseout', arrow._mouseOutHandler);
+          }
+        });
+        // --- End NEW ---
       }
     };
   }, [trafficData, selectedPair]);
