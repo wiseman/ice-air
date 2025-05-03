@@ -526,4 +526,114 @@ canvas {
 /* Fix for Leaflet default icon */
 .leaflet-default-icon-path {
   background-image: url(https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon.png);
+}
+
+/* --- ComboBox Styles --- */
+.filter-section .react-aria-Label {
+  display: block;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  margin-bottom: 4px;
+  font-weight: 500;
+}
+
+.combobox-group {
+  display: flex;
+  border: 1px solid rgba(0, 230, 255, 0.6);
+  border-radius: var(--radius);
+  background-color: var(--surface);
+  transition: border-color 0.2s ease-in-out;
+}
+
+.combobox-group:has(.react-aria-Input[data-focused]) {
+  border-color: var(--accent);
+  outline: 2px solid rgba(0, 230, 255, 0.3);
+  outline-offset: 1px;
+}
+
+.combobox-input {
+  flex-grow: 1;
+  padding: 8px 12px;
+  font-size: 1rem;
+  font-family: 'IBM Plex Mono', monospace;
+  color: var(--text-primary);
+  background-color: transparent;
+  border: none;
+  outline: none;
+  border-radius: var(--radius) 0 0 var(--radius);
+  min-width: 150px;
+}
+
+.combobox-button {
+  background-color: transparent;
+  border: none;
+  border-left: 1px solid rgba(0, 230, 255, 0.6);
+  color: var(--text-muted);
+  padding: 0 10px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0 var(--radius) var(--radius) 0;
+  transition: background-color 0.2s ease;
+}
+
+.combobox-button:hover,
+.combobox-button[data-hovered] {
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+.combobox-button[data-pressed] {
+  background-color: rgba(0, 0, 0, 0.1);
+}
+
+/* Popover and ListBox */
+.combobox-popover {
+  background-color: var(--panel);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  margin-top: 4px;
+  box-shadow: var(--shadow);
+  max-height: 300px;
+  overflow-y: auto;
+  width: var(--trigger-width);
+  z-index: 10;
+}
+
+.combobox-listbox {
+  padding: 4px;
+  outline: none;
+}
+
+.combobox-item {
+  padding: 8px 12px;
+  font-size: 0.9rem;
+  font-family: 'IBM Plex Mono', monospace;
+  color: var(--text-primary);
+  cursor: default;
+  border-radius: 4px;
+  outline: none;
+  transition: background-color 0.1s ease, color 0.1s ease;
+}
+
+.combobox-item[data-focused],
+.combobox-item[data-focus-visible] {
+  background-color: rgba(0, 230, 255, 0.3);
+  color: var(--bg);
+}
+
+.combobox-item[data-selected] {
+  background-color: var(--accent);
+  color: var(--bg);
+  font-weight: 600;
+}
+
+.combobox-item[data-hovered]:not([data-selected]) {
+  background-color: rgba(0, 230, 255, 0.15);
+}
+
+.combobox-item[data-disabled] {
+  color: var(--text-muted);
+  font-style: italic;
+  cursor: not-allowed;
 } 

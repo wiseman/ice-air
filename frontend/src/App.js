@@ -27,7 +27,12 @@ import {
   RangeCalendar,
   CalendarCell,
   CalendarGrid,
-  Heading
+  Heading,
+  ComboBox,
+  Input,
+  ListBox,
+  ListBoxItem,
+  Key
 } from 'react-aria-components';
 import {
   parseDate,
@@ -40,6 +45,7 @@ import {
 import { I18nProvider } from '@react-aria/i18n';
 import MapView from './MapView';
 import FlightsTable from './FlightsTable';
+import './styles.css'; // Import the CSS file
 
 ChartJS.register(
   CategoryScale,
@@ -639,10 +645,32 @@ function App() {
   const [initialData, setInitialData] = useState(null); // Holds rawFlights, earliestTime, latestTime
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [selectedAirport, setSelectedAirport] = useState('all'); // Destination filter
-  const [selectedPair, setSelectedPair] = useState('none'); // Pair filter
+  const [selectedAirport, setSelectedAirport] = useState('all'); // Destination filter - Use Key type
+  const [selectedPair, setSelectedPair] = useState('none'); // Pair filter - Use Key type
   const [dateRange, setDateRange] = useState(null); // Holds { start: DateValue, end: DateValue } or null
   const fileInputRef = React.createRef();
+
+  // State for ComboBox input values
+  const [airportInputValue, setAirportInputValue] = useState('');
+  const [pairInputValue, setPairInputValue] = useState('');
+  
+  // Debounce timers for input changes
+  const airportInputTimer = useRef(null);
+  const pairInputTimer = useRef(null);
+
+  // Add error handler for ResizeObserver errors
+  useEffect(() => {
+    // Suppress ResizeObserver loop limit exceeded error
+    const errorHandler = (e) => {
+      if (e && e.message && e.message.includes('ResizeObserver')) {
+        // Prevent the error from being displayed in console
+        e.stopImmediatePropagation();
+      }
+    };
+    
+    window.addEventListener('error', errorHandler);
+    return () => window.removeEventListener('error', errorHandler);
+  }, []);
 
   const handleFileUpload = useCallback((event) => {
     const file = event.target.files[0];
@@ -653,6 +681,8 @@ function App() {
     setInitialData(null); // Clear previous raw data
     setSelectedAirport('all');
     setSelectedPair('none');
+    setAirportInputValue(''); // Reset input values
+    setPairInputValue(''); // Reset input values
     setDateRange(null); // Reset date filter temporarily
 
     Papa.parse(file, {
@@ -733,7 +763,7 @@ function App() {
     // 3. Filter by Selected Pair (Origin-Destination)
     // This takes precedence if both airport and pair are somehow selected (UI prevents this)
     if (selectedPair !== 'none') {
-      flightsToFilter = flightsToFilter.filter(flight => 
+      flightsToFilter = flightsToFilter.filter(flight =>
           flight.origin && flight.destination && `${flight.origin}-${flight.destination}` === selectedPair
       );
     }
@@ -742,45 +772,95 @@ function App() {
     
   }, [initialData?.rawFlights, dateRange, selectedAirport, selectedPair]); // <-- Add selectedAirport and selectedPair to dependencies
 
+  // New memoized value for date-filtered flights only (no airport/pair filtering)
+  // This is used for top charts and ComboBox options
+  const dateFilteredFlights = useMemo(() => {
+    if (!initialData?.rawFlights) return [];
+
+    let flightsToFilter = initialData.rawFlights;
+
+    // Only apply date filtering
+    if (dateRange?.start && dateRange?.end) {
+      const startFilterTime = dateRange.start.toDate(getLocalTimeZone());
+      startFilterTime.setHours(0, 0, 0, 0); // Start of the day
+      const endFilterTime = dateRange.end.toDate(getLocalTimeZone());
+      endFilterTime.setHours(23, 59, 59, 999); // End of the day
+
+      flightsToFilter = flightsToFilter.filter(flight => {
+        const flightTimeMs = flight.timestamp.getTime();
+        const afterStart = flightTimeMs >= startFilterTime.getTime();
+        const beforeEnd = flightTimeMs <= endFilterTime.getTime();
+        return afterStart && beforeEnd;
+      });
+    }
+
+    return flightsToFilter;
+  }, [initialData?.rawFlights, dateRange]);
 
   // --- Aggregation on Filtered Data ---
   const displayedData = useMemo(() => {
     // This performs all calculations (counts, stats, daily activity)
     // based *only* on the flights that passed the date filter.
-    return aggregateFlightData(filteredFlights);
-  }, [filteredFlights]);
+    const aggData = aggregateFlightData(filteredFlights);
+
+     // Ensure input values are updated if selection changes due to filtering
+     if (selectedAirport !== 'all' && !aggData.allAirports.includes(selectedAirport)) {
+       setSelectedAirport('all');
+       setAirportInputValue('');
+     }
+     if (selectedPair !== 'none' && !aggData.allPairs.includes(selectedPair)) {
+       setSelectedPair('none');
+       setPairInputValue('');
+     }
+
+    return aggData;
+  }, [filteredFlights, selectedAirport, selectedPair]); // Add selectedAirport/Pair
+
+  // New aggregation for top charts - only uses date filtering
+  const topChartsData = useMemo(() => {
+    // This performs aggregation on date-filtered flights only
+    return aggregateFlightData(dateFilteredFlights);
+  }, [dateFilteredFlights]);
 
 
   // --- Click Handlers for Charts ---
   const handleAirportClick = useCallback((airportId) => {
-    // Use displayedData.allAirports which is based on filtered data
-    if (displayedData && displayedData.allAirports.includes(airportId)) {
+    // Use topChartsData.allAirports which contains all airports in the date range
+    if (topChartsData && topChartsData.allAirports.includes(airportId)) {
       setSelectedAirport(airportId);
       setSelectedPair('none');
+      setAirportInputValue(airportId); // Update input field text
+      setPairInputValue('');
     }
-  }, [displayedData]); // Depends on the result of aggregation
+  }, [topChartsData]); // Depends on topChartsData now
 
   const handlePairClick = useCallback((pairId) => {
-    // Use displayedData.allPairs which is based on filtered data
-    if (displayedData && displayedData.allPairs.includes(pairId)) {
+    // Use topChartsData.allPairs which contains all pairs in the date range
+    if (topChartsData && topChartsData.allPairs.includes(pairId)) {
       setSelectedPair(pairId);
       setSelectedAirport('all');
+      setPairInputValue(pairId); // Update input field text
+      setAirportInputValue('');
     }
-  }, [displayedData]); // Depends on the result of aggregation
+  }, [topChartsData]); // Depends on topChartsData now
 
   // --- NEW: Handler for map clicks ---
   const handleMapAirportClick = useCallback((airportCode) => {
     // Check if the clicked airport is valid within the current context
-    if (displayedData && displayedData.allAirports.includes(airportCode)) {
+    if (topChartsData && topChartsData.allAirports.includes(airportCode)) {
       setSelectedAirport(airportCode);
       setSelectedPair('none'); // Reset pair filter when airport is clicked on map
+      setAirportInputValue(airportCode); // Update input value
+      setPairInputValue('');
     }
-  }, [displayedData]); // Depends on displayedData for validation
+  }, [topChartsData]); // Use topChartsData for validation
 
   // --- NEW: Handler for map background clicks ---
   const handleMapBackgroundClick = useCallback(() => {
     setSelectedAirport('all');
     setSelectedPair('none');
+    setAirportInputValue(''); // Clear input values
+    setPairInputValue('');
   }, []); // No dependencies needed
 
   // --- Derive specific chart data from displayedData based on filters ---
@@ -924,6 +1004,85 @@ function App() {
   const isPairFiltered = selectedPair !== 'none';
   const filtersActive = isDateRangeFiltered || isAirportFiltered || isPairFiltered;
 
+  // --- Handlers for ComboBox Selection ---
+  const handleAirportSelectionChange = useCallback((key) => {
+      if (key === null) { // Handle case where user clears selection or types non-matching value
+          setSelectedAirport('all');
+          setAirportInputValue(''); // Clear input if selection cleared
+      } else {
+          setSelectedAirport(key);
+          const selectedText = key === 'all' ? '' : (displayedData?.allAirports.find(a => a === key) || '');
+          setAirportInputValue(selectedText); // Update input to match selection
+      }
+      // Reset pair filter when airport changes
+      setSelectedPair('none');
+      setPairInputValue('');
+  }, [displayedData?.allAirports]);
+
+  const handlePairSelectionChange = useCallback((key) => {
+      if (key === null) {
+          setSelectedPair('none');
+          setPairInputValue('');
+      } else {
+          setSelectedPair(key);
+          const selectedText = key === 'none' ? '' : (displayedData?.allPairs.find(p => p === key) || '');
+          setPairInputValue(selectedText); // Update input to match selection
+      }
+      // Reset airport filter when pair changes
+      setSelectedAirport('all');
+      setAirportInputValue('');
+  }, [displayedData?.allPairs]);
+
+  // Debounced input change handlers
+  const handleAirportInputChange = useCallback((value) => {
+    // Clear any existing timeout
+    if (airportInputTimer.current) {
+      clearTimeout(airportInputTimer.current);
+    }
+    
+    // Debounce the input change by 50ms
+    airportInputTimer.current = setTimeout(() => {
+      setAirportInputValue(value);
+    }, 50);
+  }, []);
+
+  const handlePairInputChange = useCallback((value) => {
+    // Clear any existing timeout
+    if (pairInputTimer.current) {
+      clearTimeout(pairInputTimer.current);
+    }
+    
+    // Debounce the input change by 50ms
+    pairInputTimer.current = setTimeout(() => {
+      setPairInputValue(value);
+    }, 50);
+  }, []);
+
+  // --- Prepare options for ComboBoxes (with filtering by text only) ---
+  const airportOptions = useMemo(() => {
+    if (!topChartsData?.allAirports) return [{ id: 'all', name: 'All Destinations' }];
+    // Filter by input text only, not by selectedAirport
+    const filtered = topChartsData.allAirports
+      .filter(airport => airport.toLowerCase().includes(airportInputValue.toLowerCase()))
+      .sort();
+    return [
+      { id: 'all', name: 'All Destinations' },
+      ...filtered.map(airport => ({ id: airport, name: airport }))
+    ];
+  }, [topChartsData?.allAirports, airportInputValue]);
+
+  const pairOptions = useMemo(() => {
+    if (!topChartsData?.allPairs) return [{ id: 'none', name: 'No Pair Selected' }];
+    // Filter by input text only, not by selectedPair
+    const filtered = topChartsData.allPairs
+      .filter(pair => pair.toLowerCase().includes(pairInputValue.toLowerCase()))
+      .sort();
+    return [
+      { id: 'none', name: 'No Pair Selected' },
+      ...filtered.map(pair => ({ id: pair, name: pair }))
+    ];
+  }, [topChartsData?.allPairs, pairInputValue]);
+
   return (
     <I18nProvider locale={navigator.language || 'en-US'}>
       <div className="container">
@@ -1004,40 +1163,58 @@ function App() {
                 <p><strong>Number of Days:</strong> {displayedData.numberOfDays}</p>
             </div>
 
-             {/* --- Airport/Pair Filters (Uses displayedData for options) --- */}
+             {/* --- NEW: ComboBox Filters --- */}
             <div className="filters-container">
-              <div className="filter-section">
-                <label htmlFor="airport-filter">Filter by Destination Airport:</label>
-                <select
-                  id="airport-filter"
-                  value={selectedAirport}
-                  onChange={(e) => { setSelectedAirport(e.target.value); setSelectedPair('none'); }}
-                   // Options are based on airports present in the *filtered* data
-                  disabled={loading || !displayedData.allAirports || displayedData.allAirports.length === 0}
-                >
-                  <option value="all">All Destinations</option>
-                  {/* Sort airports alphabetically for dropdown */}
-                  {[...displayedData.allAirports].sort().map(airport => (
-                    <option key={airport} value={airport}>{airport}</option>
-                  ))}
-                </select>
+                <div className="filter-section">
+                  <ComboBox
+                    label="Filter by Destination Airport:"
+                    items={airportOptions}
+                    selectedKey={selectedAirport}
+                    onSelectionChange={handleAirportSelectionChange}
+                    inputValue={airportInputValue}
+                    onInputChange={handleAirportInputChange}
+                    allowsCustomValue={false} // Don't allow values not in the list
+                    isDisabled={loading || !displayedData.allAirports}
+                    aria-label="Filter by Destination Airport" // Good for accessibility
+                    menuTrigger="input" // Open on typing
+                  >
+                    <Label>Destination Airport:</Label>
+                    <Group className="combobox-group"> {/* Use Group for styling input + button */}
+                        <Input className="combobox-input" />
+                        <Button className="combobox-button">▼</Button>
+                    </Group>
+                    <Popover className="combobox-popover">
+                        <ListBox className="combobox-listbox">
+                            {(item) => <ListBoxItem textValue={item.name} className="combobox-item">{item.name}</ListBoxItem>}
+                        </ListBox>
+                    </Popover>
+                </ComboBox>
               </div>
 
               <div className="filter-section">
-                <label htmlFor="pair-filter">Filter by Airport Pair (Origin-Destination):</label>
-                <select
-                  id="pair-filter"
-                  value={selectedPair}
-                  onChange={(e) => { setSelectedPair(e.target.value); setSelectedAirport('all'); }}
-                  // Options are based on pairs present in the *filtered* data
-                  disabled={loading || !displayedData.allPairs || displayedData.allPairs.length === 0}
-                >
-                  <option value="none">No Pair Selected</option>
-                   {/* Sort pairs alphabetically for dropdown */}
-                  {[...displayedData.allPairs].sort().map(pair => (
-                    <option key={pair} value={pair}>{pair}</option>
-                  ))}
-                </select>
+                 <ComboBox
+                    label="Filter by Airport Pair (Origin-Destination):"
+                    items={pairOptions}
+                    selectedKey={selectedPair}
+                    onSelectionChange={handlePairSelectionChange}
+                    inputValue={pairInputValue}
+                    onInputChange={handlePairInputChange}
+                    allowsCustomValue={false} // Don't allow values not in the list
+                    isDisabled={loading || !displayedData.allPairs}
+                    aria-label="Filter by Airport Pair"
+                    menuTrigger="input"
+                  >
+                    <Label>Airport Pair (Origin-Dest):</Label>
+                    <Group className="combobox-group">
+                        <Input className="combobox-input" />
+                        <Button className="combobox-button">▼</Button>
+                    </Group>
+                    <Popover className="combobox-popover">
+                        <ListBox className="combobox-listbox">
+                           {(item) => <ListBoxItem textValue={item.name} className="combobox-item">{item.name}</ListBoxItem>}
+                        </ListBox>
+                    </Popover>
+                </ComboBox>
               </div>
             </div>
 
@@ -1046,12 +1223,12 @@ function App() {
              {/* Add a check if displayedData exists and has data before rendering charts */}
              {displayedData.totalFlightsProcessed > 0 ? (
                 <div className="charts-grid">
-                  {/* Row 1: Top Destinations/Pairs (from filtered data) */}
+                  {/* Row 1: Top Destinations/Pairs (from date-filtered data only) */}
                   <div className="chart-container">
                     <BarChart
                       title="Top 20 Destination Airports"
-                      labels={displayedData.sortedAirports.map(([id]) => id)}
-                      data={displayedData.sortedAirports.map(([, count]) => count)}
+                      labels={topChartsData.sortedAirports.map(([id]) => id)}
+                      data={topChartsData.sortedAirports.map(([, count]) => count)}
                       label="Total Landings"
                       onBarClick={handleAirportClick}
                     />
@@ -1059,8 +1236,8 @@ function App() {
                   <div className="chart-container">
                     <BarChart
                       title="Top 20 Most Frequent Legs"
-                      labels={displayedData.sortedPairs.map(([pair]) => pair)}
-                      data={displayedData.sortedPairs.map(([, count]) => count)}
+                      labels={topChartsData.sortedPairs.map(([pair]) => pair)}
+                      data={topChartsData.sortedPairs.map(([, count]) => count)}
                       label="Total Flights"
                       onBarClick={handlePairClick}
                     />
