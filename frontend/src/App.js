@@ -135,7 +135,7 @@ function App() {
           if (!results.data || results.data.length === 0) {
             throw new Error("CSV file is empty or invalid.");
           }
-          const requiredColumns = ['timestamp', 'icao', 'origin', 'destination'];
+          const requiredColumns = ['takeoff_time', 'landing_time', 'icao', 'origin', 'destination'];
           const actualColumns = results.meta.fields.map(field => field ? field.trim() : '');
           if (!requiredColumns.every(col => actualColumns.includes(col))) {
              throw new Error(`CSV must include columns: ${requiredColumns.join(', ')}. Found: ${actualColumns.join(', ')}`);
@@ -190,7 +190,9 @@ function App() {
       endFilterTime.setHours(23, 59, 59, 999); // End of the day
 
       flightsToFilter = flightsToFilter.filter(flight => {
-        const flightTimeMs = flight.timestamp.getTime();
+        // Use landing_time for date filtering
+        if (!flight.landing_time) return false; // Ensure landing_time exists
+        const flightTimeMs = flight.landing_time.getTime();
         const afterStart = flightTimeMs >= startFilterTime.getTime();
         const beforeEnd = flightTimeMs <= endFilterTime.getTime();
         return afterStart && beforeEnd;
@@ -229,7 +231,9 @@ function App() {
       endFilterTime.setHours(23, 59, 59, 999); // End of the day
 
       flightsToFilter = flightsToFilter.filter(flight => {
-        const flightTimeMs = flight.timestamp.getTime();
+        // Use landing_time for date filtering
+        if (!flight.landing_time) return false; // Ensure landing_time exists
+        const flightTimeMs = flight.landing_time.getTime();
         const afterStart = flightTimeMs >= startFilterTime.getTime();
         const beforeEnd = flightTimeMs <= endFilterTime.getTime();
         return afterStart && beforeEnd;

@@ -8,9 +8,9 @@ import {
 
 // Step 1: Initial Processing (Parse, Validate, Sort, Get Range)
 export const processInitialData = (flights) => {
-  // Filter out invalid timestamps *before* sorting and processing
+  // Filter out invalid landing_times *before* sorting and processing
   const validFlights = flights.filter(flight => {
-    const time = flight.timestamp; // Use timestamp
+    const time = flight.landing_time; // Use landing_time
     if (!time) return false;
     try {
       const d = new Date(time);
@@ -18,23 +18,25 @@ export const processInitialData = (flights) => {
     } catch (e) {
       return false; // Handle potential Date constructor errors
     }
-  }).map(flight => ({ // Convert timestamp to Date object early
+  }).map(flight => ({ // Convert times to Date objects early
     ...flight,
-    timestamp: new Date(flight.timestamp)
-  })).sort((a, b) => a.timestamp - b.timestamp); // Sort by timestamp (Date objects)
+    landing_time: new Date(flight.landing_time), // Keep landing_time as main timestamp
+    // Keep takeoff_time if it exists (it might be null/empty)
+    takeoff_time: flight.takeoff_time ? new Date(flight.takeoff_time) : null, 
+  })).sort((a, b) => a.landing_time - b.landing_time); // Sort by landing_time (Date objects)
 
   if (validFlights.length === 0) {
-    throw new Error("No valid rows with parseable timestamps found in CSV.");
+    throw new Error("No valid rows with parseable landing_times found in CSV.");
   }
 
-  // Determine min/max time from the sorted valid flights
-  const minTime = validFlights[0].timestamp;
-  const maxTime = validFlights[validFlights.length - 1].timestamp;
+  // Determine min/max time from the sorted valid flights based on landing_time
+  const minTime = validFlights[0].landing_time;
+  const maxTime = validFlights[validFlights.length - 1].landing_time;
 
   return {
     rawFlights: validFlights, // Return the raw, sorted, validated flights with Date objects
-    earliestTime: minTime,
-    latestTime: maxTime,
+    earliestTime: minTime, // This now represents earliest *landing* time
+    latestTime: maxTime,   // This now represents latest *landing* time
   };
 };
 
@@ -82,19 +84,20 @@ export const aggregateFlightData = (flights) => {
   const pairDailyActivity = {}; // Stores pair-specific daily activity
 
   // Min/max times for the *filtered* set (if needed for display, otherwise use overall min/max)
-  let minTime = flights[0].timestamp;
-  let maxTime = flights[flights.length - 1].timestamp; // Already sorted
+  let minTime = flights[0].landing_time; // Use landing_time
+  let maxTime = flights[flights.length - 1].landing_time; // Use landing_time (already sorted)
 
   flights.forEach(flight => {
     // Destructure using new column names. Ensure origin/destination are present for pair logic.
-    // Timestamp is already a Date object here
-    const { timestamp, icao, origin, destination, callsign } = flight;
+    // landing_time is already a Date object here
+    const { landing_time, icao, origin, destination, callsign, takeoff_time } = flight; // Add takeoff_time
     if (!icao || !destination) return; // Skip if essential info missing for destination stats
 
-    const landingTime = timestamp; // Already a Date object
+    // Use landing_time for calculations
+    const calculationTime = landing_time; // Alias for clarity if needed, or just use landing_time directly
 
-    const dayOfWeek = landingTime.getDay(); // 0=Sun, 6=Sat
-    const hourOfDay = landingTime.getHours();
+    const dayOfWeek = calculationTime.getDay(); // 0=Sun, 6=Sat
+    const hourOfDay = calculationTime.getHours();
 
     // Add to sets for unique counts
     uniqueIcaos.add(icao);
@@ -143,10 +146,10 @@ export const aggregateFlightData = (flights) => {
       const endLoopDate = new Date(maxTime);
       endLoopDate.setUTCHours(0, 0, 0, 0);
 
-      // Create a map for quick lookup of flights by date string
+      // Create a map for quick lookup of flights by date string (using landing_time)
       const flightsByDate = {};
       flights.forEach(flight => {
-          const dateStr = flight.timestamp.toISOString().split('T')[0];
+          const dateStr = flight.landing_time.toISOString().split('T')[0]; // Use landing_time
           if (!flightsByDate[dateStr]) {
               flightsByDate[dateStr] = [];
           }
