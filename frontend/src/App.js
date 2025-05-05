@@ -90,6 +90,7 @@ function App() {
   const [selectedAirport, setSelectedAirport] = useState('all'); // Destination filter - Use Key type
   const [selectedPair, setSelectedPair] = useState('none'); // Pair filter - Use Key type
   const [dateRange, setDateRange] = useState(null); // Holds { start: DateValue, end: DateValue } or null
+  const [selectedFilename, setSelectedFilename] = useState(null); // Add this line to track filename
   const fileInputRef = React.createRef();
 
   // State for ComboBox input values
@@ -118,6 +119,9 @@ function App() {
     const file = event.target.files[0];
     if (!file) return;
 
+    // Set the selected filename
+    setSelectedFilename(file.name);
+    
     setLoading(true);
     setError(null);
     setInitialData(null); // Clear previous raw data
@@ -520,8 +524,15 @@ function App() {
             accept=".csv"
             onChange={handleFileUpload}
             ref={fileInputRef}
+            id="csvFileInput"
+            className="file-input"
           />
-          <span>Upload a CSV file (timestamp, icao, origin, destination, callsign)</span>
+          <label htmlFor="csvFileInput" className="file-input-label">
+            Select CSV
+          </label>
+          <span className="filename-display">
+            {selectedFilename || "No file chosen"}
+          </span>
         </div>
 
         {loading && <p className="loading">Loading and processing data...</p>}

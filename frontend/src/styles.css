@@ -54,30 +54,48 @@ h2 {
   margin-bottom: 24px;
 }
 
-.upload-section input[type="file"] {
-  color: var(--text-primary);
-  background: var(--panel);
-  border: 1px solid var(--accent);
-  padding: 8px 12px;
-  border-radius: var(--radius);
-  cursor: pointer;
+/* Hide the default file input */
+.file-input {
+  width: 0.1px;
+  height: 0.1px;
+  opacity: 0;
+  overflow: hidden;
+  position: absolute;
+  z-index: -1;
 }
 
-/* Hide native ugly button on some browsers */
-.upload-section input[type="file"]::-webkit-file-upload-button {
-  visibility: hidden;
-}
-.upload-section input[type="file"]::before {
-  content: "Select CSV";
-  display: inline-block;
+/* Style the label as a button */
+.file-input-label {
   background: var(--accent);
   color: #000;
-  padding: 6px 14px;
-  border-radius: var(--radius) 0 0 var(--radius);
-  margin-right: 10px;
+  padding: 8px 16px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-weight: 500;
+  display: inline-block;
+  transition: background-color 0.2s;
 }
 
-.upload-section span {
+.file-input-label:hover {
+  background-color: rgba(0, 230, 255, 0.8);
+}
+
+/* Style the filename display */
+.filename-display {
+  color: var(--text-primary);
+  background: var(--panel);
+  border: 1px solid rgba(0, 230, 255, 0.6);
+  padding: 8px 16px;
+  border-radius: var(--radius);
+  min-width: 250px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.9em;
+}
+
+.upload-section span:not(.filename-display) {
   color: var(--text-muted);
   font-family: "IBM Plex Mono", monospace;
   font-size: 0.9em;
