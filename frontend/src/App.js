@@ -512,7 +512,7 @@ function App() {
   return (
     <I18nProvider locale={navigator.language || 'en-US'}>
       <div className="container">
-        <h1>ICE Air Activity Analysis</h1>
+        <h1>Flight Pattern Analysis</h1>
 
         <div className="upload-section">
           <input
