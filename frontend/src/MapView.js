@@ -108,6 +108,60 @@ const MapView = ({ flightData, selectedAirport, selectedPair, onAirportClick, on
     return traffic;
   }, [flightData]);
 
+  // Find airport coordinates for filtered data
+  const filteredAirports = React.useMemo(() => {
+    // Ensure airports data is loaded before filtering
+    if (Object.keys(airports).length === 0 || Object.keys(airportTraffic).length === 0) {
+        return [];
+    }
+    return Object.keys(airportTraffic)
+      .filter(code => airports[code]) // Only include airports we have coordinates for
+      .map(code => ({
+        code,
+        ...airports[code],
+        traffic: airportTraffic[code]
+      }));
+  }, [airports, airportTraffic]); // Depend on airports and airportTraffic
+
+  // Calculate bounds for initial map view - MUST BE CALLED AT TOP LEVEL
+  const bounds = React.useMemo(() => {
+    if (filteredAirports.length < 2) {
+      // Not enough points to determine bounds
+      return null; 
+    }
+
+    let minLat = 90;
+    let maxLat = -90;
+    let minLng = 180;
+    let maxLng = -180;
+
+    filteredAirports.forEach(airport => {
+      minLat = Math.min(minLat, airport.lat);
+      maxLat = Math.max(maxLat, airport.lat);
+      minLng = Math.min(minLng, airport.lng);
+      maxLng = Math.max(maxLng, airport.lng);
+    });
+    
+    // Add a small padding to the bounds
+    const paddingFactor = 0.1; // 10% padding
+    const latPadding = (maxLat - minLat) * paddingFactor;
+    const lngPadding = (maxLng - minLng) * paddingFactor;
+
+    return [
+      [Math.max(-90, minLat - latPadding), Math.max(-180, minLng - lngPadding)], // Southwest corner
+      [Math.min(90, maxLat + latPadding), Math.min(180, maxLng + lngPadding)]  // Northeast corner
+    ];
+  }, [filteredAirports]);
+
+  // Calculate max traffic and circle size function - MUST BE CALLED AT TOP LEVEL
+  const maxTraffic = React.useMemo(() => Math.max(...Object.values(airportTraffic), 1), [airportTraffic]);
+
+  const getCircleSize = React.useCallback((airportCode) => {
+    const traffic = airportTraffic[airportCode] || 0;
+    // Scale between 5 and 20 pixels based on traffic
+    return 5 + (traffic / maxTraffic) * 15;
+  }, [airportTraffic, maxTraffic]); // Add dependencies
+
   if (loading) {
     return <div className="loading-map">Loading map data...</div>;
   }
@@ -115,25 +169,6 @@ const MapView = ({ flightData, selectedAirport, selectedPair, onAirportClick, on
   if (error) {
     return <div className="map-error">Error: {error}</div>;
   }
-
-  // Find the maximum traffic value for scaling
-  const maxTraffic = Math.max(...Object.values(airportTraffic), 1);
-
-  // Calculate circle size based on traffic
-  const getCircleSize = (airportCode) => {
-    const traffic = airportTraffic[airportCode] || 0;
-    // Scale between 5 and 20 pixels based on traffic
-    return 5 + (traffic / maxTraffic) * 15;
-  };
-
-  // Find airport coordinates for filtered data
-  const filteredAirports = Object.keys(airportTraffic)
-    .filter(code => airports[code]) // Only include airports we have coordinates for
-    .map(code => ({
-      code,
-      ...airports[code],
-      traffic: airportTraffic[code]
-    }));
 
   // Default map bounds
   const defaultCenter = [39.8283, -98.5795]; // Center of US
@@ -150,6 +185,7 @@ const MapView = ({ flightData, selectedAirport, selectedPair, onAirportClick, on
           selectedPair={selectedPair}
           defaultCenter={defaultCenter}
           defaultZoom={defaultZoom}
+          bounds={bounds} // Pass the calculated bounds
           onAirportClick={onAirportClick}
           onBackgroundClick={onBackgroundClick}
         />

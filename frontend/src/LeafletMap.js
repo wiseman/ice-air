@@ -64,6 +64,7 @@ const LeafletMap = ({
   selectedPair,
   defaultCenter,
   defaultZoom,
+  bounds,
   onAirportClick,
   onBackgroundClick
 }) => {
@@ -80,8 +81,6 @@ const LeafletMap = ({
     // Initialize the map if it doesn't exist
     if (!mapRef.current) {
       mapRef.current = L.map(mapContainerRef.current, {
-        center: defaultCenter,
-        zoom: defaultZoom,
         attributionControl: true
       });
       
@@ -89,6 +88,14 @@ const LeafletMap = ({
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
       }).addTo(mapRef.current);
+
+      // --- NEW: Fit bounds if available, otherwise use default center/zoom ---
+      if (bounds && bounds.length === 2 && bounds[0].length === 2 && bounds[1].length === 2) {
+        mapRef.current.fitBounds(bounds);
+      } else {
+        mapRef.current.setView(defaultCenter, defaultZoom);
+      }
+      // --- END NEW ---
     }
 
     // --- NEW: Add listener for map background clicks ---
@@ -116,7 +123,7 @@ const LeafletMap = ({
         mapRef.current = null;
       }
     };
-  }, [onBackgroundClick]); // Add onBackgroundClick as dependency
+  }, [defaultCenter, defaultZoom, bounds, onBackgroundClick]); // Add bounds and defaults as dependencies
   
   // Add airport markers
   useEffect(() => {
