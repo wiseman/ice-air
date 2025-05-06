@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 
-const SummaryStatistics = ({ displayedData }) => {
+const SummaryStatistics = ({ displayedData, aircraftDataMap, isLoadingAircraft }) => {
     const [showDetailedStats, setShowDetailedStats] = useState(false);
     const [callsignPage, setCallsignPage] = useState(1);
     const [registrationPage, setRegistrationPage] = useState(1);
@@ -142,7 +142,7 @@ const SummaryStatistics = ({ displayedData }) => {
                         {/* Registrations Table - Only show if registrations exist */}
                         {displayedData.allSortedRegistrations && displayedData.allSortedRegistrations.length > 0 && (
                             <div className="table-container">
-                                <h3>All Registrations ({displayedData.allSortedRegistrations.length})</h3>
+                                <h3>All Registrations ({displayedData.allSortedRegistrations.length}) {isLoadingAircraft ? '(Loading details...)' : ''}</h3>
                                 
                                 {/* Registration pagination */}
                                 {registrationTotalPages > 1 && (
@@ -170,15 +170,26 @@ const SummaryStatistics = ({ displayedData }) => {
                                         <tr>
                                             <th>Registration</th>
                                             <th>Flights</th>
+                                            <th>Manufacturer</th>
+                                            <th>Type</th>
+                                            <th>Owner</th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {paginatedRegistrations.map(([registration, count], index) => (
-                                            <tr key={index}>
-                                                <td>{registration}</td>
-                                                <td>{count.toLocaleString()}</td>
-                                            </tr>
-                                        ))}
+                                        {paginatedRegistrations.map((regData, index) => {
+                                            // regData = { registration, count, icao }
+                                            const lowerIcao = regData.icao ? regData.icao.toLowerCase() : null;
+                                            const aircraftInfo = lowerIcao && aircraftDataMap ? aircraftDataMap.get(lowerIcao) : null;
+                                            return (
+                                                <tr key={`${regData.registration}-${index}`}>
+                                                    <td>{regData.registration}</td>
+                                                    <td>{regData.count.toLocaleString()}</td>
+                                                    <td>{isLoadingAircraft ? '...' : (aircraftInfo ? aircraftInfo.Manufacturer : '')}</td>
+                                                    <td>{isLoadingAircraft ? '...' : (aircraftInfo ? aircraftInfo.Type : '')}</td>
+                                                    <td>{isLoadingAircraft ? '...' : (aircraftInfo ? aircraftInfo.RegisteredOwners : '')}</td>
+                                                </tr>
+                                            );
+                                        })}
                                     </tbody>
                                 </table>
                             </div>

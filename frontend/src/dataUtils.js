@@ -88,10 +88,10 @@ export const aggregateFlightData = (flights) => {
   const pairLandingsByHour = {}; // Flights for a specific pair by hour
   const uniqueIcaos = new Set();
   const uniqueCallsigns = new Set();
-  const uniqueRegistrations = new Set(); // New set for unique registrations
+  const uniqueRegistrations = new Set(); // Set for unique registrations
   const callsignCounts = {}; // Track callsign frequencies
   const icaoCounts = {}; // Track ICAO hex frequencies
-  const registrationCounts = {}; // Track registration frequencies
+  const registrationCounts = {}; // { registration: { count: number, icao: string | null } }
   const arrivalsFrom = {}; // Stores arrivals count: arrivalsFrom[destination][origin] = count
   const airportDailyActivity = {}; // Stores airport-specific daily activity
   const pairDailyActivity = {}; // Stores pair-specific daily activity
@@ -101,32 +101,47 @@ export const aggregateFlightData = (flights) => {
   let maxTime = flights[flights.length - 1].landing_time; // Use landing_time (already sorted)
 
   flights.forEach(flight => {
-    // Destructure using new column names. Ensure origin/destination are present for pair logic.
-    // landing_time is already a Date object here
-    const { landing_time, icao, origin, destination, callsign, takeoff_time, registration } = flight; // Added registration
-    if (!icao || !destination) return; // Skip if essential info missing for destination stats
+    const { landing_time, icao, origin, destination, callsign, takeoff_time, registration } = flight;
+    if (!destination) return; // Skip if destination info missing
 
-    // Use landing_time for calculations
-    const calculationTime = landing_time; // Alias for clarity if needed, or just use landing_time directly
-
-    const dayOfWeek = calculationTime.getDay(); // 0=Sun, 6=Sat
+    const calculationTime = landing_time;
+    const dayOfWeek = calculationTime.getDay();
     const hourOfDay = calculationTime.getHours();
 
+    // Use lowercase icao for consistency
+    const lowerIcao = icao ? icao.toLowerCase() : null;
+
     // Add to sets for unique counts
-    uniqueIcaos.add(icao);
-    icaoCounts[icao] = (icaoCounts[icao] || 0) + 1;
-    
+    if (lowerIcao) {
+        uniqueIcaos.add(lowerIcao);
+        icaoCounts[lowerIcao] = (icaoCounts[lowerIcao] || 0) + 1;
+    }
+
     if (callsign) {
       const trimmedCallsign = callsign.trim();
-      uniqueCallsigns.add(trimmedCallsign);
-      callsignCounts[trimmedCallsign] = (callsignCounts[trimmedCallsign] || 0) + 1;
+      if (trimmedCallsign) { // Ensure not empty after trim
+        uniqueCallsigns.add(trimmedCallsign);
+        callsignCounts[trimmedCallsign] = (callsignCounts[trimmedCallsign] || 0) + 1;
+      }
     }
-    
+
     // Track registrations if present
     if (registration) {
       const trimmedRegistration = registration.trim();
-      uniqueRegistrations.add(trimmedRegistration);
-      registrationCounts[trimmedRegistration] = (registrationCounts[trimmedRegistration] || 0) + 1;
+      if (trimmedRegistration) { // Ensure not empty after trim
+          uniqueRegistrations.add(trimmedRegistration);
+          if (!registrationCounts[trimmedRegistration]) {
+              // Initialize with count 1 and the current flight's ICAO
+              registrationCounts[trimmedRegistration] = { count: 1, icao: lowerIcao };
+          } else {
+              registrationCounts[trimmedRegistration].count++;
+              // Optionally, update ICAO if it was initially null? 
+              // For now, just keep the first ICAO encountered for this registration.
+              // if (!registrationCounts[trimmedRegistration].icao && lowerIcao) {
+              //   registrationCounts[trimmedRegistration].icao = lowerIcao;
+              // }
+          }
+      }
     }
 
     // Increment overall counts based on destination
@@ -194,7 +209,8 @@ export const aggregateFlightData = (flights) => {
           const todaysFlights = flightsByDate[dateString] || [];
 
           todaysFlights.forEach(flight => {
-              if (flight.icao) dailyUniqueAircraft.add(flight.icao);
+              const lowerIcao = flight.icao ? flight.icao.toLowerCase() : null;
+              if (lowerIcao) dailyUniqueAircraft.add(lowerIcao);
               if (flight.destination) dailyLandings++;
 
               // Track per-destination daily activity
@@ -203,7 +219,7 @@ export const aggregateFlightData = (flights) => {
                       airportDailyActivity[dateString][flight.destination] = { landings: 0, uniqueAircraft: new Set() };
                   }
                   airportDailyActivity[dateString][flight.destination].landings++;
-                  if (flight.icao) airportDailyActivity[dateString][flight.destination].uniqueAircraft.add(flight.icao);
+                  if (lowerIcao) airportDailyActivity[dateString][flight.destination].uniqueAircraft.add(lowerIcao);
               }
 
               // Track pair activity
@@ -213,7 +229,7 @@ export const aggregateFlightData = (flights) => {
                       pairDailyActivity[dateString][pair] = { flights: 0, uniqueAircraft: new Set() };
                   }
                   pairDailyActivity[dateString][pair].flights++;
-                  if (flight.icao) pairDailyActivity[dateString][pair].uniqueAircraft.add(flight.icao);
+                  if (lowerIcao) pairDailyActivity[dateString][pair].uniqueAircraft.add(lowerIcao);
               }
           });
 
@@ -248,36 +264,49 @@ export const aggregateFlightData = (flights) => {
     .sort(([, countA], [, countB]) => countB - countA)
     .slice(0, 5);
     
-  // Get the top registrations
+  // Get the top Registrations (use the count from the object)
   const topRegistrations = Object.entries(registrationCounts)
-    .sort(([, countA], [, countB]) => countB - countA)
+    .sort(([, dataA], [, dataB]) => dataB.count - dataA.count)
+    .map(([registration, data]) => [registration, data.count]) // Extract [registration, count]
     .slice(0, 5);
 
-  // Get full sorted lists (all items for detailed tables)
+  // Get all sorted registrations with their ICAO for the detailed list
+  const allSortedRegistrations = Object.entries(registrationCounts)
+    .sort(([, dataA], [, dataB]) => dataB.count - dataA.count)
+    .map(([registration, data]) => ({ // Return object with registration, count, and icao
+      registration: registration,
+      count: data.count,
+      icao: data.icao 
+    })); 
+
+  // Get all sorted callsigns
   const allSortedCallsigns = Object.entries(callsignCounts)
     .sort(([, countA], [, countB]) => countB - countA);
     
+  // Get all sorted ICAOs
   const allSortedIcaos = Object.entries(icaoCounts)
     .sort(([, countA], [, countB]) => countB - countA);
     
-  // Get all sorted registrations
-  const allSortedRegistrations = Object.entries(registrationCounts)
-    .sort(([, countA], [, countB]) => countB - countA);
+  // Get all unique airport codes mentioned as destination
+  const allAirports = Object.keys(airportCounts).sort();
 
-  // Return aggregated data based on the input flight list
+  // Get all unique origin-destination pairs
+  const allPairs = Object.keys(airportPairs).sort();
+
+  // Calculate number of days in the range
+  const numberOfDays = dailyLabels.length;
+
   return {
-    // Stats for the *filtered* period
     totalFlightsProcessed: flights.length,
     uniqueAircraftCount: uniqueIcaos.size,
     uniqueCallsignCount: uniqueCallsigns.size,
-    uniqueRegistrationCount: uniqueRegistrations.size,  // New field
+    uniqueRegistrationCount: uniqueRegistrations.size,
     topCallsigns,
     topIcaos,
-    topRegistrations,  // New field
-    allSortedCallsigns,
+    topRegistrations,
+    allSortedCallsigns, 
     allSortedIcaos,
-    allSortedRegistrations,  // New field
-    // Chart Data for the *filtered* period
+    allSortedRegistrations, // Now includes { registration, count, icao }
     sortedAirports,
     sortedPairs,
     landingsByDay,
@@ -287,15 +316,14 @@ export const aggregateFlightData = (flights) => {
     pairLandingsByDay,
     pairLandingsByHour,
     arrivalsFrom,
-    allAirports: Object.keys(airportCounts).sort(),
-    allPairs: Object.keys(airportPairs).sort(),
-    // Daily Activity for the *filtered* period
+    allAirports,
+    allPairs,
     dailyLabels,
     dailyUniqueAircraftCounts,
     dailyTotalLandings,
     airportDailyActivity,
     pairDailyActivity,
-    numberOfDays: dailyLabels.length
+    numberOfDays
   };
 };
 

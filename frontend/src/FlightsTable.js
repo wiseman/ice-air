@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 
 // Helper to format Date objects nicely for the table (local time)
 const formatTableDateTime = (date) => {
@@ -32,61 +32,9 @@ const formatUrlDateTime = (date) => {
   }
 };
 
-const FlightsTable = ({ flights }) => {
-  const [aircraftDataMap, setAircraftDataMap] = useState(new Map());
-  const [isLoading, setIsLoading] = useState(true);
-
-  useEffect(() => {
-    const fetchAircraftData = async () => {
-      setIsLoading(true);
-      try {
-        const response = await fetch('/aircraft.csv');
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        const csvText = await response.text();
-        const lines = csvText.trim().split('\n');
-        const header = lines[0].split(',').map(h => h.trim());
-        const icaoIndex = header.indexOf('icao');
-        const manufacturerIndex = header.indexOf('Manufacturer');
-        const typeIndex = header.indexOf('Type');
-        const ownerIndex = header.indexOf('RegisteredOwners');
-
-        if (icaoIndex === -1 || manufacturerIndex === -1 || typeIndex === -1 || ownerIndex === -1) {
-          console.error('CSV header is missing required columns (icao, Manufacturer, Type, RegisteredOwners)');
-          throw new Error('Invalid CSV header');
-        }
-
-        const dataMap = new Map();
-        for (let i = 1; i < lines.length; i++) {
-          const values = lines[i].split(','); // Simple split, assumes no commas within fields
-          if (values.length === header.length) {
-            const icao = values[icaoIndex].trim().toLowerCase();
-            if (icao) {
-              dataMap.set(icao, {
-                Manufacturer: values[manufacturerIndex].trim(),
-                Type: values[typeIndex].trim(),
-                RegisteredOwners: values[ownerIndex].trim(),
-              });
-            }
-          } else {
-            console.warn(`Skipping malformed CSV line ${i + 1}: ${lines[i]}`);
-          }
-        }
-        setAircraftDataMap(dataMap);
-      } catch (error) {
-        console.error("Failed to fetch or parse aircraft data:", error);
-        // Handle error state if needed, maybe set an error flag in state
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchAircraftData();
-  }, []); // Empty dependency array ensures this runs only once on mount
-
-  if (isLoading) {
-    return <p>Loading aircraft data...</p>;
+const FlightsTable = ({ flights, aircraftDataMap, isLoadingAircraft }) => {
+  if (isLoadingAircraft) {
+    return <p>Loading aircraft details...</p>;
   }
 
   if (!flights || flights.length === 0) {

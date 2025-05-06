@@ -93,6 +93,11 @@ function App() {
   const [selectedFilename, setSelectedFilename] = useState(null); // Add this line to track filename
   const fileInputRef = React.createRef();
 
+  // State for aircraft details fetched from aircraft.csv
+  const [aircraftDataMap, setAircraftDataMap] = useState(new Map());
+  const [isLoadingAircraft, setIsLoadingAircraft] = useState(true);
+  const [aircraftDataError, setAircraftDataError] = useState(null);
+
   // State for ComboBox input values
   const [airportInputValue, setAirportInputValue] = useState('');
   const [pairInputValue, setPairInputValue] = useState('');
@@ -100,6 +105,58 @@ function App() {
   // Debounce timers for input changes
   const airportInputTimer = useRef(null);
   const pairInputTimer = useRef(null);
+
+  // Fetch aircraft details from aircraft.csv on initial mount
+  useEffect(() => {
+    const fetchAircraftData = async () => {
+      setIsLoadingAircraft(true);
+      setAircraftDataError(null);
+      try {
+        const response = await fetch('/aircraft.csv');
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        const csvText = await response.text();
+        const lines = csvText.trim().split('\n');
+        const header = lines[0].split(',').map(h => h.trim());
+        const icaoIndex = header.indexOf('icao'); // Use lowercase 'icao'
+        const manufacturerIndex = header.indexOf('Manufacturer');
+        const typeIndex = header.indexOf('Type');
+        const ownerIndex = header.indexOf('RegisteredOwners');
+
+        if (icaoIndex === -1 || manufacturerIndex === -1 || typeIndex === -1 || ownerIndex === -1) {
+          console.error('Aircraft CSV header is missing required columns (icao, Manufacturer, Type, RegisteredOwners)');
+          throw new Error('Invalid aircraft CSV header');
+        }
+
+        const dataMap = new Map();
+        for (let i = 1; i < lines.length; i++) {
+          // Basic CSV split - consider a library for complex CSVs
+          const values = lines[i].split(',').map(v => v.trim()); 
+          if (values.length === header.length) {
+            const icao = values[icaoIndex].toLowerCase(); // Ensure lowercase for lookup
+            if (icao) {
+              dataMap.set(icao, {
+                Manufacturer: values[manufacturerIndex],
+                Type: values[typeIndex],
+                RegisteredOwners: values[ownerIndex],
+              });
+            }
+          } else if (lines[i].trim()) { // Only warn if line isn't just whitespace
+            console.warn(`Skipping malformed aircraft CSV line ${i + 1}: ${lines[i]}`);
+          }
+        }
+        setAircraftDataMap(dataMap);
+      } catch (error) {
+        console.error("Failed to fetch or parse aircraft data:", error);
+        setAircraftDataError(`Failed to load aircraft details: ${error.message}`);
+      } finally {
+        setIsLoadingAircraft(false);
+      }
+    };
+
+    fetchAircraftData();
+  }, []); // Run only once on mount
 
   // Add error handler for ResizeObserver errors
   useEffect(() => {
@@ -256,9 +313,8 @@ function App() {
 
   // --- Aggregation on Filtered Data ---
   const displayedData = useMemo(() => {
-    // This performs all calculations (counts, stats, daily activity)
-    // based *only* on the flights that passed the date filter.
-    const aggData = aggregateFlightData(filteredFlights);
+    // Pass aircraft data map to aggregation
+    const aggData = aggregateFlightData(filteredFlights, aircraftDataMap);
 
      // Ensure input values are updated if selection changes due to filtering
      if (selectedAirport !== 'all' && !aggData.allAirports.includes(selectedAirport)) {
@@ -271,13 +327,13 @@ function App() {
      }
 
     return aggData;
-  }, [filteredFlights, selectedAirport, selectedPair]); // Add selectedAirport/Pair
+  }, [filteredFlights, selectedAirport, selectedPair, aircraftDataMap]); // Add aircraftDataMap dependency
 
   // New aggregation for top charts - only uses date filtering
   const topChartsData = useMemo(() => {
-    // This performs aggregation on date-filtered flights only
-    return aggregateFlightData(dateFilteredFlights);
-  }, [dateFilteredFlights]);
+    // Pass aircraft data map to aggregation
+    return aggregateFlightData(dateFilteredFlights, aircraftDataMap);
+  }, [dateFilteredFlights, aircraftDataMap]); // Add aircraftDataMap dependency
 
 
   // --- Click Handlers for Charts ---
@@ -414,17 +470,6 @@ function App() {
 
     return { labels, uniqueAircraftCounts, totalLandings };
   }, [displayedData, selectedAirport, selectedPair]);
-
-  // --- Convert JS Date to CalendarDate for min/max Value ---  
-  // const getCalendarDate = (jsDate) => {
-  //   if (!jsDate || !(jsDate instanceof Date)) return undefined;
-  //   // Convert JS Date (local) into a CalendarDate object
-  //   // We need year, month, day in the *local* time zone
-  //   return new CalendarDate(jsDate.getFullYear(), jsDate.getMonth() + 1, jsDate.getDate());
-  //   // Alternative if timestamps are UTC: use parseAbsoluteToLocal(jsDate.toISOString()).date;
-  //   // Or more robustly if input is guaranteed UTC:
-  //   // return toCalendarDate(new CalendarDateTime(jsDate.getUTCFullYear(), jsDate.getUTCMonth() + 1, jsDate.getUTCDate(), jsDate.getUTCHours(), jsDate.getUTCMinutes()));
-  // };
 
   // --- Determine if filters are active --- 
   const isDateRangeFiltered = useMemo(() => {
@@ -598,7 +643,11 @@ function App() {
             </div>
 
             {/* --- Summary Statistics Section (Uses displayedData) --- */}
-            <SummaryStatistics displayedData={displayedData} />
+            <SummaryStatistics 
+              displayedData={displayedData} 
+              aircraftDataMap={aircraftDataMap} 
+              isLoadingAircraft={isLoadingAircraft} 
+            />
 
              {/* --- NEW: ComboBox Filters --- */}
             <div className="filters-container">
@@ -763,7 +812,11 @@ function App() {
             {/* --- Filtered Flights Table (conditional) --- */}
             {filtersActive && displayedData.totalFlightsProcessed > 0 && (
               <div className="table-section">
-                 <FlightsTable flights={filteredFlights} />
+                 <FlightsTable 
+                   flights={filteredFlights} 
+                   aircraftDataMap={aircraftDataMap} 
+                   isLoadingAircraft={isLoadingAircraft} 
+                 />
               </div>
             )}
             {filtersActive && displayedData.totalFlightsProcessed === 0 && (
