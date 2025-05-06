@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -73,63 +73,66 @@ const LeafletMap = ({
   const airportMarkersRef = useRef({});
   const flightPathsRef = useRef({});
   const arrowsRef = useRef({});
+  const initializedRef = useRef(false);
+  const [mapReady, setMapReady] = useState(false);
 
-  // Initialize the map
+  // Initialize the map only once
   useEffect(() => {
-    if (!mapContainerRef.current) return;
+    if (!mapContainerRef.current || initializedRef.current) return;
     
-    // Initialize the map if it doesn't exist
-    if (!mapRef.current) {
-      mapRef.current = L.map(mapContainerRef.current, {
-        attributionControl: true
-      });
-      
-      // Add tile layer
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-      }).addTo(mapRef.current);
+    // Create the map
+    mapRef.current = L.map(mapContainerRef.current, {
+      attributionControl: true
+    });
+    
+    // Add tile layer
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    }).addTo(mapRef.current);
 
-      // --- NEW: Fit bounds if available, otherwise use default center/zoom ---
-      if (bounds && bounds.length === 2 && bounds[0].length === 2 && bounds[1].length === 2) {
-        mapRef.current.fitBounds(bounds);
-      } else {
-        mapRef.current.setView(defaultCenter, defaultZoom);
-      }
-      // --- END NEW ---
+    // Set initial view - only once
+    if (bounds && bounds.length === 2 && bounds[0].length === 2 && bounds[1].length === 2) {
+      mapRef.current.fitBounds(bounds);
+    } else {
+      mapRef.current.setView(defaultCenter, defaultZoom);
     }
 
-    // --- NEW: Add listener for map background clicks ---
-    if (mapRef.current && onBackgroundClick) {
+    // Add click handler for map background
+    if (onBackgroundClick) {
       const mapClickHandler = (e) => {
-        // Check if the click was on the map directly, not on a layer (like a marker)
         if (e.originalEvent.target === mapRef.current._container) {
           onBackgroundClick();
         }
       };
       mapRef.current.on('click', mapClickHandler);
-
-      // Store the handler to remove it later
       mapRef.current._backgroundClickHandler = mapClickHandler;
     }
+
+    initializedRef.current = true;
+    setMapReady(true);
     
-    // Clean up the map on unmount
+    // Clean up only when component unmounts
     return () => {
       if (mapRef.current) {
-        // --- NEW: Remove background click listener ---
         if (mapRef.current._backgroundClickHandler) {
           mapRef.current.off('click', mapRef.current._backgroundClickHandler);
         }
         mapRef.current.remove();
         mapRef.current = null;
+        initializedRef.current = false;
       }
     };
-  }, [defaultCenter, defaultZoom, bounds, onBackgroundClick]); // Add bounds and defaults as dependencies
-  
-  // Add airport markers
+  }, []); // Empty dependency array ensures this only runs once
+
+  // Update airport markers without affecting map view
   useEffect(() => {
-    if (!mapRef.current) return;
+    if (!mapRef.current || !mapReady) return;
     
-    // Remove existing airport markers
+    // Save current view state
+    const currentCenter = mapRef.current.getCenter();
+    const currentZoom = mapRef.current.getZoom();
+    
+    // Clean up existing markers
     Object.values(airportMarkersRef.current).forEach(marker => {
       marker.remove();
     });
@@ -169,16 +172,26 @@ const LeafletMap = ({
       // Store reference to marker
       airportMarkersRef.current[code] = marker;
     });
-  }, [filteredAirports, getCircleSize, selectedAirport, onAirportClick]);
+    
+    // Restore original view state
+    mapRef.current.setView(currentCenter, currentZoom, {
+      animate: false,
+      duration: 0
+    });
+  }, [filteredAirports, getCircleSize, selectedAirport, onAirportClick, mapReady]);
 
-  // Add flight paths with directional arrows
+  // Update flight paths without affecting map view
   useEffect(() => {
-    if (!mapRef.current) return;
+    if (!mapRef.current || !mapReady) return;
+    
+    // Save current view state
+    const currentCenter = mapRef.current.getCenter();
+    const currentZoom = mapRef.current.getZoom();
     
     // Find max traffic count for scaling
     const maxCount = trafficData.length > 0 ? trafficData[0].count : 1;
     
-    // Remove existing flight paths and arrows
+    // Clean up existing flight paths and arrows
     Object.values(flightPathsRef.current).forEach(path => {
       path.remove();
     });
@@ -260,12 +273,11 @@ const LeafletMap = ({
       arrowPath.setAttribute("stroke", "none");
       arrowPath.setAttribute("transform", `translate(${point2.x},${point2.y}) rotate(${angle})`);
       
-      // --- NEW: Add hover events to arrow --- 
+      // Add hover events to arrow
       const handleArrowMouseOver = (e) => {
         const targetPath = flightPathsRef.current[pairKey];
         if (targetPath) {
            // Open the tooltip associated with the main flight path
-           // Optional: Try to position it near the mouse event
            const map = mapRef.current;
            if (map) {
              const latlng = map.mouseEventToLatLng(e);
@@ -284,7 +296,6 @@ const LeafletMap = ({
 
       arrowPath.addEventListener('mouseover', handleArrowMouseOver);
       arrowPath.addEventListener('mouseout', handleArrowMouseOut);
-      // Store handlers for cleanup
       arrowPath._mouseOverHandler = handleArrowMouseOver;
       arrowPath._mouseOutHandler = handleArrowMouseOut;
       
@@ -323,7 +334,13 @@ const LeafletMap = ({
       flightPath._updateArrow = updateArrow;
     });
     
-    // Clean up event listeners when the component unmounts or trafficData changes
+    // Restore original view state
+    mapRef.current.setView(currentCenter, currentZoom, {
+      animate: false,
+      duration: 0
+    });
+    
+    // Clean up event listeners when trafficData changes
     return () => {
       if (mapRef.current) {
         Object.values(flightPathsRef.current).forEach(path => {
@@ -333,7 +350,6 @@ const LeafletMap = ({
           }
         });
 
-        // --- NEW: Clean up arrow hover listeners ---
         Object.values(arrowsRef.current).forEach(arrow => {
           if (arrow._mouseOverHandler) {
             arrow.removeEventListener('mouseover', arrow._mouseOverHandler);
@@ -342,10 +358,9 @@ const LeafletMap = ({
             arrow.removeEventListener('mouseout', arrow._mouseOutHandler);
           }
         });
-        // --- End NEW ---
       }
     };
-  }, [trafficData, selectedPair]);
+  }, [trafficData, selectedPair, mapReady]);
 
   return (
     <div 

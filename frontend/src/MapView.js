@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Papa from 'papaparse';
 import 'leaflet/dist/leaflet.css';
 
@@ -9,6 +9,8 @@ const MapView = ({ flightData, selectedAirport, selectedPair, onAirportClick, on
   const [airports, setAirports] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [initialBounds, setInitialBounds] = useState(null);
+  const initialDataProcessed = useRef(false);
   
   // Load airport coordinates
   useEffect(() => {
@@ -123,37 +125,38 @@ const MapView = ({ flightData, selectedAirport, selectedPair, onAirportClick, on
       }));
   }, [airports, airportTraffic]); // Depend on airports and airportTraffic
 
-  // Calculate bounds for initial map view - MUST BE CALLED AT TOP LEVEL
-  const bounds = React.useMemo(() => {
-    if (filteredAirports.length < 2) {
-      // Not enough points to determine bounds
-      return null; 
+  // Calculate bounds ONLY ONCE after initial data is loaded
+  useEffect(() => {
+    // Only calculate bounds once when we first get filteredAirports
+    if (filteredAirports.length >= 2 && !initialBounds && !initialDataProcessed.current) {
+      let minLat = 90;
+      let maxLat = -90;
+      let minLng = 180;
+      let maxLng = -180;
+
+      filteredAirports.forEach(airport => {
+        minLat = Math.min(minLat, airport.lat);
+        maxLat = Math.max(maxLat, airport.lat);
+        minLng = Math.min(minLng, airport.lng);
+        maxLng = Math.max(maxLng, airport.lng);
+      });
+      
+      // Add a small padding to the bounds
+      const paddingFactor = 0.1; // 10% padding
+      const latPadding = (maxLat - minLat) * paddingFactor;
+      const lngPadding = (maxLng - minLng) * paddingFactor;
+
+      const bounds = [
+        [Math.max(-90, minLat - latPadding), Math.max(-180, minLng - lngPadding)], // Southwest corner
+        [Math.min(90, maxLat + latPadding), Math.min(180, maxLng + lngPadding)]  // Northeast corner
+      ];
+      
+      setInitialBounds(bounds);
+      initialDataProcessed.current = true;
     }
+  }, [filteredAirports, initialBounds]);
 
-    let minLat = 90;
-    let maxLat = -90;
-    let minLng = 180;
-    let maxLng = -180;
-
-    filteredAirports.forEach(airport => {
-      minLat = Math.min(minLat, airport.lat);
-      maxLat = Math.max(maxLat, airport.lat);
-      minLng = Math.min(minLng, airport.lng);
-      maxLng = Math.max(maxLng, airport.lng);
-    });
-    
-    // Add a small padding to the bounds
-    const paddingFactor = 0.1; // 10% padding
-    const latPadding = (maxLat - minLat) * paddingFactor;
-    const lngPadding = (maxLng - minLng) * paddingFactor;
-
-    return [
-      [Math.max(-90, minLat - latPadding), Math.max(-180, minLng - lngPadding)], // Southwest corner
-      [Math.min(90, maxLat + latPadding), Math.min(180, maxLng + lngPadding)]  // Northeast corner
-    ];
-  }, [filteredAirports]);
-
-  // Calculate max traffic and circle size function - MUST BE CALLED AT TOP LEVEL
+  // Calculate max traffic and circle size function
   const maxTraffic = React.useMemo(() => Math.max(...Object.values(airportTraffic), 1), [airportTraffic]);
 
   const getCircleSize = React.useCallback((airportCode) => {
@@ -185,7 +188,7 @@ const MapView = ({ flightData, selectedAirport, selectedPair, onAirportClick, on
           selectedPair={selectedPair}
           defaultCenter={defaultCenter}
           defaultZoom={defaultZoom}
-          bounds={bounds} // Pass the calculated bounds
+          bounds={initialBounds} // Pass the INITIAL bounds, not recalculated ones
           onAirportClick={onAirportClick}
           onBackgroundClick={onBackgroundClick}
         />
