@@ -140,9 +140,16 @@ function App() {
             throw new Error("CSV file is empty or invalid.");
           }
           const requiredColumns = ['takeoff_time', 'landing_time', 'icao', 'origin', 'destination'];
+          const optionalColumns = ['registration', 'callsign'];  // Add registration as optional field
           const actualColumns = results.meta.fields.map(field => field ? field.trim() : '');
           if (!requiredColumns.every(col => actualColumns.includes(col))) {
              throw new Error(`CSV must include columns: ${requiredColumns.join(', ')}. Found: ${actualColumns.join(', ')}`);
+          }
+
+          // Optional columns notice for UI feedback
+          const missingOptionalColumns = optionalColumns.filter(col => !actualColumns.includes(col));
+          if (missingOptionalColumns.length > 0) {
+            console.log(`Note: Some optional columns are missing: ${missingOptionalColumns.join(', ')}`);
           }
 
           // Perform initial processing only

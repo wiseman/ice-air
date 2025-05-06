@@ -23,6 +23,8 @@ export const processInitialData = (flights) => {
     landing_time: new Date(flight.landing_time), // Keep landing_time as main timestamp
     // Keep takeoff_time if it exists (it might be null/empty)
     takeoff_time: flight.takeoff_time ? new Date(flight.takeoff_time) : null, 
+    // Preserve registration field
+    registration: flight.registration || null,
   })).sort((a, b) => a.landing_time - b.landing_time); // Sort by landing_time (Date objects)
 
   if (validFlights.length === 0) {
@@ -49,10 +51,13 @@ export const aggregateFlightData = (flights) => {
       totalFlightsProcessed: 0,
       uniqueAircraftCount: 0,
       uniqueCallsignCount: 0,
+      uniqueRegistrationCount: 0,  // New field for unique registrations
       topCallsigns: [],
       topIcaos: [],
+      topRegistrations: [],        // New field for top registrations
       allSortedCallsigns: [],
       allSortedIcaos: [],
+      allSortedRegistrations: [],  // New field for all sorted registrations
       sortedAirports: [],
       sortedPairs: [],
       landingsByDay: Array(7).fill(0),
@@ -83,8 +88,10 @@ export const aggregateFlightData = (flights) => {
   const pairLandingsByHour = {}; // Flights for a specific pair by hour
   const uniqueIcaos = new Set();
   const uniqueCallsigns = new Set();
+  const uniqueRegistrations = new Set(); // New set for unique registrations
   const callsignCounts = {}; // Track callsign frequencies
   const icaoCounts = {}; // Track ICAO hex frequencies
+  const registrationCounts = {}; // Track registration frequencies
   const arrivalsFrom = {}; // Stores arrivals count: arrivalsFrom[destination][origin] = count
   const airportDailyActivity = {}; // Stores airport-specific daily activity
   const pairDailyActivity = {}; // Stores pair-specific daily activity
@@ -96,7 +103,7 @@ export const aggregateFlightData = (flights) => {
   flights.forEach(flight => {
     // Destructure using new column names. Ensure origin/destination are present for pair logic.
     // landing_time is already a Date object here
-    const { landing_time, icao, origin, destination, callsign, takeoff_time } = flight; // Add takeoff_time
+    const { landing_time, icao, origin, destination, callsign, takeoff_time, registration } = flight; // Added registration
     if (!icao || !destination) return; // Skip if essential info missing for destination stats
 
     // Use landing_time for calculations
@@ -113,6 +120,13 @@ export const aggregateFlightData = (flights) => {
       const trimmedCallsign = callsign.trim();
       uniqueCallsigns.add(trimmedCallsign);
       callsignCounts[trimmedCallsign] = (callsignCounts[trimmedCallsign] || 0) + 1;
+    }
+    
+    // Track registrations if present
+    if (registration) {
+      const trimmedRegistration = registration.trim();
+      uniqueRegistrations.add(trimmedRegistration);
+      registrationCounts[trimmedRegistration] = (registrationCounts[trimmedRegistration] || 0) + 1;
     }
 
     // Increment overall counts based on destination
@@ -233,12 +247,21 @@ export const aggregateFlightData = (flights) => {
   const topIcaos = Object.entries(icaoCounts)
     .sort(([, countA], [, countB]) => countB - countA)
     .slice(0, 5);
+    
+  // Get the top registrations
+  const topRegistrations = Object.entries(registrationCounts)
+    .sort(([, countA], [, countB]) => countB - countA)
+    .slice(0, 5);
 
   // Get full sorted lists (all items for detailed tables)
   const allSortedCallsigns = Object.entries(callsignCounts)
     .sort(([, countA], [, countB]) => countB - countA);
     
   const allSortedIcaos = Object.entries(icaoCounts)
+    .sort(([, countA], [, countB]) => countB - countA);
+    
+  // Get all sorted registrations
+  const allSortedRegistrations = Object.entries(registrationCounts)
     .sort(([, countA], [, countB]) => countB - countA);
 
   // Return aggregated data based on the input flight list
@@ -247,10 +270,13 @@ export const aggregateFlightData = (flights) => {
     totalFlightsProcessed: flights.length,
     uniqueAircraftCount: uniqueIcaos.size,
     uniqueCallsignCount: uniqueCallsigns.size,
+    uniqueRegistrationCount: uniqueRegistrations.size,  // New field
     topCallsigns,
     topIcaos,
+    topRegistrations,  // New field
     allSortedCallsigns,
     allSortedIcaos,
+    allSortedRegistrations,  // New field
     // Chart Data for the *filtered* period
     sortedAirports,
     sortedPairs,

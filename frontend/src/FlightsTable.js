@@ -50,6 +50,7 @@ const FlightsTable = ({ flights }) => {
             <th>Origin</th>
             <th>Destination</th>
             <th>Callsign</th>
+            <th>Registration</th>
             {/* <th>ICAO</th> */} { /* Keep ICAO commented for now */}
             <th>Link</th> { /* New Link column */}
           </tr>
@@ -75,6 +76,7 @@ const FlightsTable = ({ flights }) => {
                 <td>{flight.origin || 'N/A'}</td>
                 <td>{flight.destination || 'N/A'}</td>
                 <td>{flight.callsign || 'N/A'}</td>
+                <td>{flight.registration || 'N/A'}</td>
                 {/* <td>{icao}</td> */}
                 <td>
                   {adsbLink !== '#' ? (

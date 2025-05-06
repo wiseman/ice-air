@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 const SummaryStatistics = ({ displayedData }) => {
     const [showDetailedStats, setShowDetailedStats] = useState(false);
     const [callsignPage, setCallsignPage] = useState(1);
-    const [icaoPage, setIcaoPage] = useState(1);
+    const [registrationPage, setRegistrationPage] = useState(1);
     const itemsPerPage = 25; // Show 25 items per page
     
     if (!displayedData) return null; // Don't render if no data
@@ -12,7 +12,7 @@ const SummaryStatistics = ({ displayedData }) => {
         setShowDetailedStats(!showDetailedStats);
         // Reset pagination when showing/hiding
         setCallsignPage(1);
-        setIcaoPage(1);
+        setRegistrationPage(1);
     };
     
     // Calculate pagination for callsigns
@@ -21,11 +21,11 @@ const SummaryStatistics = ({ displayedData }) => {
     const callsignEnd = callsignStart + itemsPerPage;
     const paginatedCallsigns = displayedData.allSortedCallsigns?.slice(callsignStart, callsignEnd) || [];
     
-    // Calculate pagination for ICAOs
-    const icaoTotalPages = Math.ceil((displayedData.allSortedIcaos?.length || 0) / itemsPerPage);
-    const icaoStart = (icaoPage - 1) * itemsPerPage;
-    const icaoEnd = icaoStart + itemsPerPage;
-    const paginatedIcaos = displayedData.allSortedIcaos?.slice(icaoStart, icaoEnd) || [];
+    // Calculate pagination for registrations
+    const registrationTotalPages = Math.ceil((displayedData.allSortedRegistrations?.length || 0) / itemsPerPage);
+    const registrationStart = (registrationPage - 1) * itemsPerPage;
+    const registrationEnd = registrationStart + itemsPerPage;
+    const paginatedRegistrations = displayedData.allSortedRegistrations?.slice(registrationStart, registrationEnd) || [];
 
     return (
         <div className="summary-stats">
@@ -34,8 +34,11 @@ const SummaryStatistics = ({ displayedData }) => {
             <p><strong>Total Flights:</strong> {displayedData.totalFlightsProcessed.toLocaleString()}</p>
             <p><strong>Unique Aircraft:</strong> {displayedData.uniqueAircraftCount.toLocaleString()}</p>
             <p><strong>Unique Callsigns:</strong> {displayedData.uniqueCallsignCount.toLocaleString()}</p>
+            {displayedData.uniqueRegistrationCount > 0 && (
+                <p><strong>Unique Registrations:</strong> {displayedData.uniqueRegistrationCount.toLocaleString()}</p>
+            )}
             
-            {/* Condensed view of top callsigns and ICAOs */}
+            {/* Condensed view of top callsigns and registrations */}
             <div className="top-stats-preview">
                 {displayedData.topCallsigns && displayedData.topCallsigns.length > 0 && (
                     <div className="top-callsigns">
@@ -48,12 +51,12 @@ const SummaryStatistics = ({ displayedData }) => {
                     </div>
                 )}
                 
-                {displayedData.topIcaos && displayedData.topIcaos.length > 0 && (
-                    <div className="top-icaos">
-                        <p><strong>Top ICAO Hexes:</strong></p>
+                {displayedData.topRegistrations && displayedData.topRegistrations.length > 0 && (
+                    <div className="top-callsigns">
+                        <p><strong>Top Registrations:</strong></p>
                         <ul>
-                            {displayedData.topIcaos.map(([icao, count], index) => (
-                                <li key={index}>{icao}: {count.toLocaleString()}</li>
+                            {displayedData.topRegistrations.map(([registration, count], index) => (
+                                <li key={index}>{registration}: {count.toLocaleString()}</li>
                             ))}
                         </ul>
                     </div>
@@ -61,7 +64,7 @@ const SummaryStatistics = ({ displayedData }) => {
             </div>
             
             {/* Toggle button for detailed tables */}
-            {(displayedData.topCallsigns?.length > 0 || displayedData.topIcaos?.length > 0) && (
+            {(displayedData.topCallsigns?.length > 0 || displayedData.topRegistrations?.length > 0) && (
                 <button 
                     className="stats-toggle-button"
                     onClick={toggleDetailedStats}
@@ -118,48 +121,50 @@ const SummaryStatistics = ({ displayedData }) => {
                             </table>
                         </div>
                         
-                        {/* ICAO Hexes Table */}
-                        <div className="table-container">
-                            <h3>All ICAO Hexes ({displayedData.allSortedIcaos.length})</h3>
-                            
-                            {/* ICAO pagination - moved to top */}
-                            {icaoTotalPages > 1 && (
-                                <div className="stats-pagination">
-                                    <button 
-                                        onClick={() => setIcaoPage(prev => Math.max(prev - 1, 1))}
-                                        disabled={icaoPage === 1}
-                                    >
-                                        Previous
-                                    </button>
-                                    <span className="page-info">
-                                        Page {icaoPage} of {icaoTotalPages}
-                                    </span>
-                                    <button 
-                                        onClick={() => setIcaoPage(prev => Math.min(prev + 1, icaoTotalPages))}
-                                        disabled={icaoPage === icaoTotalPages}
-                                    >
-                                        Next
-                                    </button>
-                                </div>
-                            )}
-                            
-                            <table className="flights-table">
-                                <thead>
-                                    <tr>
-                                        <th>ICAO Hex</th>
-                                        <th>Flights</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {paginatedIcaos.map(([icao, count], index) => (
-                                        <tr key={index}>
-                                            <td>{icao}</td>
-                                            <td>{count.toLocaleString()}</td>
+                        {/* Registrations Table - Only show if registrations exist */}
+                        {displayedData.allSortedRegistrations && displayedData.allSortedRegistrations.length > 0 && (
+                            <div className="table-container">
+                                <h3>All Registrations ({displayedData.allSortedRegistrations.length})</h3>
+                                
+                                {/* Registration pagination */}
+                                {registrationTotalPages > 1 && (
+                                    <div className="stats-pagination">
+                                        <button 
+                                            onClick={() => setRegistrationPage(prev => Math.max(prev - 1, 1))}
+                                            disabled={registrationPage === 1}
+                                        >
+                                            Previous
+                                        </button>
+                                        <span className="page-info">
+                                            Page {registrationPage} of {registrationTotalPages}
+                                        </span>
+                                        <button 
+                                            onClick={() => setRegistrationPage(prev => Math.min(prev + 1, registrationTotalPages))}
+                                            disabled={registrationPage === registrationTotalPages}
+                                        >
+                                            Next
+                                        </button>
+                                    </div>
+                                )}
+                                
+                                <table className="flights-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Registration</th>
+                                            <th>Flights</th>
                                         </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
+                                    </thead>
+                                    <tbody>
+                                        {paginatedRegistrations.map(([registration, count], index) => (
+                                            <tr key={index}>
+                                                <td>{registration}</td>
+                                                <td>{count.toLocaleString()}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
                     </div>
                 </div>
             )}
