@@ -656,7 +656,7 @@ function App() {
                   {/* Row 1: Top Destinations/Pairs (from date-filtered data only) */}
                   <div className="chart-container">
                     <BarChart
-                      title="Top 20 Destination Airports"
+                      title="Top 20 Destinations"
                       labels={topChartsData.sortedAirports.map(([id]) => id)}
                       data={topChartsData.sortedAirports.map(([, count]) => count)}
                       label="Total Landings"
@@ -666,7 +666,7 @@ function App() {
                   </div>
                   <div className="chart-container">
                     <BarChart
-                      title="Top 20 Most Frequent Legs"
+                      title="Top 20 Legs"
                       labels={topChartsData.sortedPairs.map(([pair]) => pair)}
                       data={topChartsData.sortedPairs.map(([, count]) => count)}
                       label="Total Flights"
