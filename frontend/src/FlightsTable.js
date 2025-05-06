@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 
 // Helper to format Date objects nicely for the table (local time)
 const formatTableDateTime = (date) => {
@@ -33,6 +33,62 @@ const formatUrlDateTime = (date) => {
 };
 
 const FlightsTable = ({ flights }) => {
+  const [aircraftDataMap, setAircraftDataMap] = useState(new Map());
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchAircraftData = async () => {
+      setIsLoading(true);
+      try {
+        const response = await fetch('/aircraft.csv');
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        const csvText = await response.text();
+        const lines = csvText.trim().split('\n');
+        const header = lines[0].split(',').map(h => h.trim());
+        const icaoIndex = header.indexOf('icao');
+        const manufacturerIndex = header.indexOf('Manufacturer');
+        const typeIndex = header.indexOf('Type');
+        const ownerIndex = header.indexOf('RegisteredOwners');
+
+        if (icaoIndex === -1 || manufacturerIndex === -1 || typeIndex === -1 || ownerIndex === -1) {
+          console.error('CSV header is missing required columns (icao, Manufacturer, Type, RegisteredOwners)');
+          throw new Error('Invalid CSV header');
+        }
+
+        const dataMap = new Map();
+        for (let i = 1; i < lines.length; i++) {
+          const values = lines[i].split(','); // Simple split, assumes no commas within fields
+          if (values.length === header.length) {
+            const icao = values[icaoIndex].trim().toLowerCase();
+            if (icao) {
+              dataMap.set(icao, {
+                Manufacturer: values[manufacturerIndex].trim(),
+                Type: values[typeIndex].trim(),
+                RegisteredOwners: values[ownerIndex].trim(),
+              });
+            }
+          } else {
+            console.warn(`Skipping malformed CSV line ${i + 1}: ${lines[i]}`);
+          }
+        }
+        setAircraftDataMap(dataMap);
+      } catch (error) {
+        console.error("Failed to fetch or parse aircraft data:", error);
+        // Handle error state if needed, maybe set an error flag in state
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchAircraftData();
+  }, []); // Empty dependency array ensures this runs only once on mount
+
+  if (isLoading) {
+    return <p>Loading aircraft data...</p>;
+  }
+
   if (!flights || flights.length === 0) {
     return <p>No flights match the current filters.</p>;
   }
@@ -52,32 +108,40 @@ const FlightsTable = ({ flights }) => {
             <th>Callsign</th>
             <th>Registration</th>
             {/* <th>ICAO</th> */} { /* Keep ICAO commented for now */}
+            <th>Manufacturer</th>
+            <th>Type</th>
+            <th>Registered Owner</th>
             <th>Link</th> { /* New Link column */}
           </tr>
         </thead>
         <tbody>
           {displayFlights.map((flight, index) => {
             const landingTimeFormatted = formatTableDateTime(flight.landing_time);
-            const icao = flight.icao || '';
+            const lowerIcao = flight.icao ? flight.icao.toLowerCase() : null;
+            const aircraftInfo = lowerIcao ? aircraftDataMap.get(lowerIcao) : null;
+
             const takeoffTime = formatUrlDateTime(flight.takeoff_time);
             const landingTimeUrl = formatUrlDateTime(flight.landing_time);
             
             let adsbLink = '#'; // Default link if times are invalid
-            if (icao && takeoffTime && landingTimeUrl) {
-              adsbLink = `https://globe.adsbexchange.com/?icao=${icao}&showTrace=${takeoffTime.date}&startTime=${takeoffTime.time}&endTime=${landingTimeUrl.time}`;
-            } else if (icao && landingTimeUrl) {
+            if (lowerIcao && takeoffTime && landingTimeUrl) {
+              adsbLink = `https://globe.adsbexchange.com/?icao=${lowerIcao}&showTrace=${takeoffTime.date}&startTime=${takeoffTime.time}&endTime=${landingTimeUrl.time}`;
+            } else if (lowerIcao && landingTimeUrl) {
                // Fallback if only landing time is valid - link to general ICAO page for the day
-               adsbLink = `https://globe.adsbexchange.com/?icao=${icao}&showTrace=${landingTimeUrl.date}`;
+               adsbLink = `https://globe.adsbexchange.com/?icao=${lowerIcao}&showTrace=${landingTimeUrl.date}`;
             }
 
             return (
-              <tr key={`${landingTimeFormatted}-${icao}-${index}`}> { /* Use landing time in key */}
+              <tr key={`${landingTimeFormatted}-${lowerIcao}-${index}`}> { /* Use landing time in key */}
                 <td>{landingTimeFormatted}</td>
                 <td>{flight.origin || 'N/A'}</td>
                 <td>{flight.destination || 'N/A'}</td>
                 <td>{flight.callsign || 'N/A'}</td>
                 <td>{flight.registration || 'N/A'}</td>
-                {/* <td>{icao}</td> */}
+                {/* <td>{lowerIcao || 'N/A'}</td> */}
+                <td>{aircraftInfo ? aircraftInfo.Manufacturer : ''}</td>
+                <td>{aircraftInfo ? aircraftInfo.Type : ''}</td>
+                <td>{aircraftInfo ? aircraftInfo.RegisteredOwners : ''}</td>
                 <td>
                   {adsbLink !== '#' ? (
                     <a href={adsbLink} target="_blank" rel="noopener noreferrer">
