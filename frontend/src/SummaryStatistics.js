@@ -27,6 +27,11 @@ const SummaryStatistics = ({ displayedData }) => {
     const registrationEnd = registrationStart + itemsPerPage;
     const paginatedRegistrations = displayedData.allSortedRegistrations?.slice(registrationStart, registrationEnd) || [];
 
+    // Check if we should show top stats section
+    const hasTopStats = displayedData.topCallsigns?.length > 0 || displayedData.topRegistrations?.length > 0;
+    const hasCallsigns = displayedData.topCallsigns?.length > 0;
+    const hasRegistrations = displayedData.topRegistrations?.length > 0;
+
     return (
         <div className="summary-stats">
             <h2>Summary Statistics</h2>
@@ -38,40 +43,53 @@ const SummaryStatistics = ({ displayedData }) => {
                 <p><strong>Unique Registrations:</strong> {displayedData.uniqueRegistrationCount.toLocaleString()}</p>
             )}
             
-            {/* Condensed view of top callsigns and registrations */}
-            <div className="top-stats-preview">
-                {displayedData.topCallsigns && displayedData.topCallsigns.length > 0 && (
-                    <div className="top-callsigns">
-                        <p><strong>Top Callsigns:</strong></p>
-                        <ul>
-                            {displayedData.topCallsigns.map(([callsign, count], index) => (
-                                <li key={index}>{callsign}: {count.toLocaleString()}</li>
-                            ))}
-                        </ul>
+            {/* Header row with Toggle button */}
+            {hasTopStats && (
+                <div className="top-stats-header">
+                    <div className="top-stats-title">
+                        <strong>Frequency Analysis</strong>
                     </div>
-                )}
-                
-                {displayedData.topRegistrations && displayedData.topRegistrations.length > 0 && (
-                    <div className="top-callsigns">
-                        <p><strong>Top Registrations:</strong></p>
-                        <ul>
-                            {displayedData.topRegistrations.map(([registration, count], index) => (
-                                <li key={index}>{registration}: {count.toLocaleString()}</li>
-                            ))}
-                        </ul>
-                    </div>
-                )}
-            </div>
+                    <button 
+                        className="stats-toggle-button"
+                        onClick={toggleDetailedStats}
+                        aria-expanded={showDetailedStats}
+                    >
+                        {showDetailedStats ? 'Hide Details ▲' : 'Show Details ▼'}
+                    </button>
+                </div>
+            )}
             
-            {/* Toggle button for detailed tables */}
-            {(displayedData.topCallsigns?.length > 0 || displayedData.topRegistrations?.length > 0) && (
-                <button 
-                    className="stats-toggle-button"
-                    onClick={toggleDetailedStats}
-                    aria-expanded={showDetailedStats}
-                >
-                    {showDetailedStats ? 'Hide Details ▲' : 'Show Details ▼'}
-                </button>
+            {/* Two-column layout for callsigns and registrations - only show when detailed stats are hidden */}
+            {hasTopStats && !showDetailedStats && (
+                <div className="top-stats-columns">
+                    {/* Callsigns column */}
+                    {hasCallsigns && (
+                        <div className="top-stats-column">
+                            <div className="column-header">
+                                <strong>Top Callsigns</strong>
+                            </div>
+                            <div className="top-items">
+                                {displayedData.topCallsigns.map(([callsign, count], index) => (
+                                    <span key={index} className="top-item">{callsign}: {count.toLocaleString()}</span>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                    
+                    {/* Registrations column */}
+                    {hasRegistrations && (
+                        <div className="top-stats-column">
+                            <div className="column-header">
+                                <strong>Top Registrations</strong>
+                            </div>
+                            <div className="top-items">
+                                {displayedData.topRegistrations.map(([registration, count], index) => (
+                                    <span key={index} className="top-item">{registration}: {count.toLocaleString()}</span>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                </div>
             )}
             
             {/* Detailed tables section - with FlightsTable styling */}

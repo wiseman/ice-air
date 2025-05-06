@@ -214,6 +214,68 @@ canvas {
   color: var(--accent);
 }
 
+/* New compact top stats layout */
+.top-stats-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: 12px 0 6px 0;
+}
+
+.top-stats-title {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.95em;
+}
+
+/* Two-column layout for callsigns and registrations */
+.top-stats-columns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  margin-bottom: 10px;
+}
+
+.top-stats-column {
+  flex: 1;
+  min-width: 200px; /* Ensure columns don't get too narrow */
+  background: var(--surface);
+  border-radius: 4px;
+  padding: 8px 12px;
+}
+
+.column-header {
+  margin-bottom: 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid rgba(0, 230, 255, 0.2);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.9em;
+}
+
+.top-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-width: 100%;
+}
+
+.top-item {
+  display: inline-block;
+  background: rgba(0, 0, 0, 0.2);
+  padding: 3px 8px;
+  border-radius: 3px;
+  font-size: 0.85em;
+  white-space: nowrap;
+}
+
+/* Old styles for backward compatibility */
+.top-stats-inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-bottom: 10px;
+}
+
+/* Old styles kept for backwards compatibility */
 .top-callsigns ul {
   list-style-type: none;
   padding-left: 20px;
@@ -257,7 +319,7 @@ canvas {
   padding: 6px 12px;
   font-size: 0.85em;
   cursor: pointer;
-  margin: 0 0 15px 0;
+  margin: 0;
   transition: background-color 0.2s;
 }
 
