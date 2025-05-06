@@ -661,6 +661,7 @@ function App() {
                       data={topChartsData.sortedAirports.map(([, count]) => count)}
                       label="Total Landings"
                       onBarClick={handleAirportClick}
+                      showAllLabels={true}
                     />
                   </div>
                   <div className="chart-container">
@@ -670,6 +671,7 @@ function App() {
                       data={topChartsData.sortedPairs.map(([, count]) => count)}
                       label="Total Flights"
                       onBarClick={handlePairClick}
+                      showAllLabels={true}
                     />
                   </div>
 

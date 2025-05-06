@@ -3,7 +3,7 @@ import { Bar } from 'react-chartjs-2';
 // Note: Chart.js instance and registration is handled in App.js
 // No need to register scales/elements here again if Chart.js is configured globally
 
-const BarChart = ({ title, labels, data, label, onBarClick }) => {
+const BarChart = ({ title, labels, data, label, onBarClick, showAllLabels = false }) => {
     const chartRef = useRef();
 
     // Check if data is valid before rendering
@@ -63,9 +63,9 @@ const BarChart = ({ title, labels, data, label, onBarClick }) => {
             display: false
           },
           ticks: {
-            autoSkip: true,
-            maxRotation: 45, // Rotate labels slightly if needed
-            minRotation: 0,
+            autoSkip: !showAllLabels, // Don't skip labels when showAllLabels is true
+            maxRotation: showAllLabels ? 90 : 45, // Rotate more when showing all labels
+            minRotation: showAllLabels ? 45 : 0, // Minimum rotation when showing all labels
             color: axisColor,
             font: { family: 'IBM Plex Mono' }
           }
