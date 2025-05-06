@@ -214,6 +214,157 @@ canvas {
   color: var(--accent);
 }
 
+.top-callsigns ul {
+  list-style-type: none;
+  padding-left: 20px;
+  margin: 5px 0 15px 0;
+}
+
+.top-callsigns li, .top-icaos li {
+  display: inline-block;
+  background: var(--surface);
+  padding: 4px 10px;
+  margin: 3px 5px 3px 0;
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+
+/* Top stats preview layout */
+.top-stats-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  margin-bottom: 10px;
+}
+
+.top-stats-preview > div {
+  flex: 1;
+  min-width: 250px;
+}
+
+.top-icaos ul {
+  list-style-type: none;
+  padding-left: 20px;
+  margin: 5px 0 15px 0;
+}
+
+/* Stats toggle button */
+.stats-toggle-button {
+  background: var(--surface);
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  padding: 6px 12px;
+  font-size: 0.85em;
+  cursor: pointer;
+  margin: 0 0 15px 0;
+  transition: background-color 0.2s;
+}
+
+.stats-toggle-button:hover {
+  background: rgba(0, 230, 255, 0.1);
+}
+
+/* Stats tables container */
+.stats-tables-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 30px; 
+  margin: 0 -15px; /* Compensate for padding in table-section */
+}
+
+.stats-tables-container .table-container {
+  flex: 1;
+  min-width: 300px;
+}
+
+.stats-tables-container h3 {
+  margin-top: 0;
+}
+
+/* Pagination controls for detailed stats tables */
+.stats-pagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 15px;
+  margin-top: 15px;
+}
+
+.stats-pagination button {
+  background: var(--surface);
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  padding: 4px 10px;
+  font-size: 0.8em;
+  cursor: pointer;
+}
+
+.stats-pagination button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.stats-pagination .page-info {
+  font-size: 0.85em;
+  color: var(--text-muted);
+}
+
+/* Remove old detailed-stats-tables and stats-table styles since we're using table-section now */
+.detailed-stats-tables {
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 15px;
+  margin-bottom: 15px;
+}
+
+.stats-table {
+  flex: 1;
+  min-width: 250px;
+}
+
+.stats-table h3 {
+  color: var(--accent);
+  font-size: 1em;
+  margin-top: 0;
+  margin-bottom: 10px;
+}
+
+.stats-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.85em;
+}
+
+.stats-table thead {
+  border-bottom: 1px solid rgba(0, 230, 255, 0.3);
+}
+
+.stats-table th {
+  text-align: left;
+  padding: 8px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.stats-table tbody tr {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.stats-table tbody tr:last-child {
+  border-bottom: none;
+}
+
+.stats-table td {
+  padding: 6px 8px;
+}
+
+.stats-table td:last-child {
+  text-align: right;
+}
+
 /* --- Date Range Picker --------------------------------------------------- */
 .date-filter-section {
   padding: 16px;

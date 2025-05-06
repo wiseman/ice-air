@@ -49,6 +49,10 @@ export const aggregateFlightData = (flights) => {
       totalFlightsProcessed: 0,
       uniqueAircraftCount: 0,
       uniqueCallsignCount: 0,
+      topCallsigns: [],
+      topIcaos: [],
+      allSortedCallsigns: [],
+      allSortedIcaos: [],
       sortedAirports: [],
       sortedPairs: [],
       landingsByDay: Array(7).fill(0),
@@ -79,6 +83,8 @@ export const aggregateFlightData = (flights) => {
   const pairLandingsByHour = {}; // Flights for a specific pair by hour
   const uniqueIcaos = new Set();
   const uniqueCallsigns = new Set();
+  const callsignCounts = {}; // Track callsign frequencies
+  const icaoCounts = {}; // Track ICAO hex frequencies
   const arrivalsFrom = {}; // Stores arrivals count: arrivalsFrom[destination][origin] = count
   const airportDailyActivity = {}; // Stores airport-specific daily activity
   const pairDailyActivity = {}; // Stores pair-specific daily activity
@@ -101,8 +107,12 @@ export const aggregateFlightData = (flights) => {
 
     // Add to sets for unique counts
     uniqueIcaos.add(icao);
+    icaoCounts[icao] = (icaoCounts[icao] || 0) + 1;
+    
     if (callsign) {
-      uniqueCallsigns.add(callsign.trim());
+      const trimmedCallsign = callsign.trim();
+      uniqueCallsigns.add(trimmedCallsign);
+      callsignCounts[trimmedCallsign] = (callsignCounts[trimmedCallsign] || 0) + 1;
     }
 
     // Increment overall counts based on destination
@@ -214,12 +224,33 @@ export const aggregateFlightData = (flights) => {
     .sort(([, countA], [, countB]) => countB - countA)
     .slice(0, 20);
 
+  // Get the top callsigns
+  const topCallsigns = Object.entries(callsignCounts)
+    .sort(([, countA], [, countB]) => countB - countA)
+    .slice(0, 5);
+
+  // Get the top ICAO hexes
+  const topIcaos = Object.entries(icaoCounts)
+    .sort(([, countA], [, countB]) => countB - countA)
+    .slice(0, 5);
+
+  // Get full sorted lists (all items for detailed tables)
+  const allSortedCallsigns = Object.entries(callsignCounts)
+    .sort(([, countA], [, countB]) => countB - countA);
+    
+  const allSortedIcaos = Object.entries(icaoCounts)
+    .sort(([, countA], [, countB]) => countB - countA);
+
   // Return aggregated data based on the input flight list
   return {
     // Stats for the *filtered* period
     totalFlightsProcessed: flights.length,
     uniqueAircraftCount: uniqueIcaos.size,
     uniqueCallsignCount: uniqueCallsigns.size,
+    topCallsigns,
+    topIcaos,
+    allSortedCallsigns,
+    allSortedIcaos,
     // Chart Data for the *filtered* period
     sortedAirports,
     sortedPairs,
