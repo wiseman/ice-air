@@ -288,7 +288,7 @@ canvas {
   justify-content: center;
   align-items: center;
   gap: 15px;
-  margin-top: 15px;
+  margin-bottom: 15px;
 }
 
 .stats-pagination button {
